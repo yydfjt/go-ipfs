@@ -1,7 +1,6 @@
 package commands
 
 import (
-	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -16,12 +15,12 @@ import (
 	dagtest "gx/ipfs/QmRiQCJZ91B7VNmLvA6sxzDuBJGSojS3uXHHVuNr3iueNZ/go-merkledag/test"
 	blockservice "gx/ipfs/QmbSB9Uh3wVgmiCb1fAb8zuC3qAE6un4kd1jvatUurfAmB/go-blockservice"
 
-	cmds "gx/ipfs/QmPTfgFTo9PFr1PvPKyKoeMgBvYPh6cX3aDP7DHKVbnCbi/go-ipfs-cmds"
 	mh "gx/ipfs/QmPnFwZ2JXKnXgMw8CdBPxn7FWh6LLdjUjxV1fKHuJnkr8/go-multihash"
 	pb "gx/ipfs/QmPtj12fdwuAqj9sBSTNUxBNu8kCGNp8b3o8yUzMm5GHpq/pb"
 	cidutil "gx/ipfs/QmPyxJ2QS7L5FhGkNYkNcXHGjDhvGHueJ4auqAstFHYxy5/go-cidutil"
 	cmdkit "gx/ipfs/QmSP88ryZkHSRn1fnngAaV2Vcn63WUJzAavnRM9CVdU1Ky/go-ipfs-cmdkit"
 	files "gx/ipfs/QmSP88ryZkHSRn1fnngAaV2Vcn63WUJzAavnRM9CVdU1Ky/go-ipfs-cmdkit/files"
+	cmds "gx/ipfs/QmZVPuwGNz2s9THwLS4psrJGam6NSEQMvDTaaZgNfqQBCE/go-ipfs-cmds"
 	offline "gx/ipfs/QmZxjqR9Qgompju73kakSoUj3rbVndAzky3oCDiBNCxPs1/go-ipfs-exchange-offline"
 	bstore "gx/ipfs/QmcmpX42gtDv1fz24kau4wjS9hfwWj5VexWBKgGnWzsyag/go-ipfs-blockstore"
 	mfs "gx/ipfs/QmdghKsSDa2AD1kC4qYRnVYWqZecdSBRZjeXRdhMYYhafj/go-mfs"
@@ -146,17 +145,15 @@ You can now check what blocks have been created by:
 
 		return nil
 	},
-	Run: func(req *cmds.Request, res cmds.ResponseEmitter, env cmds.Environment) {
+	Run: func(req *cmds.Request, res cmds.ResponseEmitter, env cmds.Environment) error {
 		n, err := cmdenv.GetNode(env)
 		if err != nil {
-			res.SetError(err, cmdkit.ErrNormal)
-			return
+			return err
 		}
 
 		cfg, err := n.Repo.Config()
 		if err != nil {
-			res.SetError(err, cmdkit.ErrNormal)
-			return
+			return err
 		}
 		// check if repo will exceed storage limit if added
 		// TODO: this doesn't handle the case if the hashed file is already in blocks (deduplicated)
@@ -192,19 +189,14 @@ You can now check what blocks have been created by:
 
 		// nocopy -> filestoreEnabled
 		if nocopy && !cfg.Experimental.FilestoreEnabled {
-			res.SetError(filestore.ErrFilestoreNotEnabled, cmdkit.ErrClient)
-			return
+			return cmdkit.Errorf(cmdkit.ErrClient, filestore.ErrFilestoreNotEnabled.Error())
 		}
 
 		// nocopy -> rawblocks
 		if nocopy && !rawblks {
 			// fixed?
 			if rbset {
-				res.SetError(
-					fmt.Errorf("nocopy option requires '--raw-leaves' to be enabled as well"),
-					cmdkit.ErrNormal,
-				)
-				return
+				return fmt.Errorf("nocopy option requires '--raw-leaves' to be enabled as well")
 			}
 			// No, satisfy mandatory constraint.
 			rawblks = true
@@ -213,11 +205,7 @@ You can now check what blocks have been created by:
 		// (hash != "sha2-256") -> CIDv1
 		if hashFunStr != "sha2-256" && cidVer == 0 {
 			if cidVerSet {
-				res.SetError(
-					errors.New("CIDv0 only supports sha2-256"),
-					cmdkit.ErrClient,
-				)
-				return
+				return cmdkit.Errorf(cmdkit.ErrClient, "CIDv0 only supports sha2-256")
 			}
 			cidVer = 1
 		}
@@ -229,14 +217,12 @@ You can now check what blocks have been created by:
 
 		prefix, err := dag.PrefixForCidVersion(cidVer)
 		if err != nil {
-			res.SetError(err, cmdkit.ErrNormal)
-			return
+			return err
 		}
 
 		hashFunCode, ok := mh.Names[strings.ToLower(hashFunStr)]
 		if !ok {
-			res.SetError(fmt.Errorf("unrecognized hash function: %s", strings.ToLower(hashFunStr)), cmdkit.ErrNormal)
-			return
+			return fmt.Errorf("unrecognized hash function: %s", strings.ToLower(hashFunStr))
 		}
 
 		prefix.MhType = hashFunCode
@@ -249,8 +235,7 @@ You can now check what blocks have been created by:
 				NilRepo: true,
 			})
 			if err != nil {
-				res.SetError(err, cmdkit.ErrNormal)
-				return
+				return err
 			}
 			n = nilnode
 		}
@@ -273,8 +258,7 @@ You can now check what blocks have been created by:
 
 		fileAdder, err := coreunix.NewAdder(req.Context, n.Pinning, n.Blockstore, dserv)
 		if err != nil {
-			res.SetError(err, cmdkit.ErrNormal)
-			return
+			return err
 		}
 
 		fileAdder.Out = outChan
@@ -303,8 +287,7 @@ You can now check what blocks have been created by:
 			emptyDirNode.SetCidBuilder(fileAdder.CidBuilder)
 			mr, err := mfs.NewRoot(req.Context, md, emptyDirNode, nil)
 			if err != nil {
-				res.SetError(err, cmdkit.ErrNormal)
-				return
+				return err
 			}
 
 			fileAdder.SetMfsRoot(mr)
@@ -348,24 +331,18 @@ You can now check what blocks have been created by:
 			err = addAllAndPin(req.Files)
 		}()
 
-		defer res.Close()
-
 		err = res.Emit(outChan)
 		if err != nil {
-			log.Error(err)
-			return
+			return err
 		}
-		err = <-errCh
-		if err != nil {
-			res.SetError(err, cmdkit.ErrNormal)
-		}
+
+		return <-errCh
 	},
 	PostRun: cmds.PostRunMap{
-		cmds.CLI: func(req *cmds.Request, re cmds.ResponseEmitter) cmds.ResponseEmitter {
-			reNext, res := cmds.NewChanResponsePair(req)
-			outChan := make(chan interface{})
-
+		cmds.CLI: func(res cmds.Response, re cmds.ResponseEmitter) error {
 			sizeChan := make(chan int64, 1)
+			outChan := make(chan interface{})
+			req := res.Request()
 
 			sizeFile, ok := req.Files.(files.SizeFile)
 			if ok {
@@ -471,38 +448,33 @@ You can now check what blocks have been created by:
 				}
 			}
 
-			go func() {
-				// defer order important! First close outChan, then wait for output to finish, then close re
-				defer re.Close()
+			if e := res.Error(); e != nil {
+				close(outChan)
+				return e
+			}
 
-				if e := res.Error(); e != nil {
-					defer close(outChan)
-					re.SetError(e.Message, e.Code)
-					return
-				}
+			wait := make(chan struct{})
+			go progressBar(wait)
 
-				wait := make(chan struct{})
-				go progressBar(wait)
+			defer func() { <-wait }()
+			defer close(outChan)
 
-				defer func() { <-wait }()
-				defer close(outChan)
-
-				for {
-					v, err := res.Next()
-					if !cmds.HandleError(err, res, re) {
-						break
+			for {
+				v, err := res.Next()
+				if err != nil {
+					if err == io.EOF {
+						return nil
 					}
 
-					select {
-					case outChan <- v:
-					case <-req.Context.Done():
-						re.SetError(req.Context.Err(), cmdkit.ErrNormal)
-						return
-					}
+					return err
 				}
-			}()
 
-			return reNext
+				select {
+				case outChan <- v:
+				case <-req.Context.Done():
+					return req.Context.Err()
+				}
+			}
 		},
 	},
 	Type: coreunix.AddedObject{},
