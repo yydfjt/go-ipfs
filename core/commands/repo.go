@@ -11,15 +11,18 @@ import (
 
 	oldcmds "github.com/ipfs/go-ipfs/commands"
 	lgc "github.com/ipfs/go-ipfs/commands/legacy"
+	core "github.com/ipfs/go-ipfs/core"
 	e "github.com/ipfs/go-ipfs/core/commands/e"
 	corerepo "github.com/ipfs/go-ipfs/core/corerepo"
 	config "github.com/ipfs/go-ipfs/repo/config"
 	fsrepo "github.com/ipfs/go-ipfs/repo/fsrepo"
 
 	cmds "gx/ipfs/QmSKYWC84fqkKB54Te5JMcov2MBVzucXaRGxFqByzzCbHe/go-ipfs-cmds"
+	b58 "gx/ipfs/QmWFAMPqsEyUX7gDUsRVmMWz59FxSpJ1b2v6bJ1yYzo7jY/go-base58-fast/base58"
 	bstore "gx/ipfs/QmayRSLCiM2gWR7Kay8vqu3Yy5mf7yPqocF9ZRgDUPYMcc/go-ipfs-blockstore"
 	cid "gx/ipfs/QmcZfnkapfECQGcLZaf9B79NRg7cRa9EnZh4LSbkCzwNvY/go-cid"
 	cmdkit "gx/ipfs/QmceUdzxkimdYsgtX733uNgzf1DLHyBKN6ehGSp85ayppM/go-ipfs-cmdkit"
+	ds "gx/ipfs/QmeiCcJfDW1GJnWUArudsv5rQsihpi4oyddPhdqo3CfX6i/go-datastore"
 )
 
 type RepoVersion struct {
@@ -40,6 +43,7 @@ var RepoCmd = &cmds.Command{
 		"fsck":    lgc.NewCommand(RepoFsckCmd),
 		"version": lgc.NewCommand(repoVersionCmd),
 		"verify":  lgc.NewCommand(repoVerifyCmd),
+		"rm-root": repoRmRootCmd,
 	},
 }
 
@@ -259,7 +263,79 @@ daemons are running.
 	},
 	Type: MessageOutput{},
 	Marshalers: oldcmds.MarshalerMap{
-		oldcmds.Text: MessageTextMarshaler,
+		cmds.Text: MessageTextMarshaler,
+	},
+}
+
+var repoRmRootCmd = &cmds.Command{
+	Helptext: cmdkit.HelpText{
+		Tagline: "Unlink the root used by the files API.",
+		ShortDescription: `
+'ipfs repo rm-root' will unlink the root used by the files API ('ipfs
+files' commands) without trying to read the root itself.  The root and
+its children will then be removed by the garbage collector unless
+pinned.
+
+This command is designed to recover form the situation when the root
+becomes unavailable and recovering it (such as recreating it, or
+fetching it from the network) is not possible.  This command should
+only be used as a last resort as using this command could lead to data
+loss if there are unpinned nodes connected to the root.
+
+This command can only run when the ipfs daemon is not running.
+`,
+	},
+	Run: func(req *cmds.Request, res cmds.ResponseEmitter, env cmds.Environment) {
+		ctx, ok := env.(*oldcmds.Context)
+		if !ok {
+			res.SetError(fmt.Errorf("expected env to be of type %T, got %T", ctx, env), cmdkit.ErrNormal)
+			return
+		}
+		configRoot := ctx.ConfigRoot
+
+		// Can't use a full node as that interferes with the removal
+		// of the files root, so open the repo directly
+		repo, err := fsrepo.Open(configRoot)
+		if err != nil {
+			res.SetError(err, cmdkit.ErrNormal)
+			return
+		}
+
+		// Get the old root and display it to the user so that they can
+		// can do something to prevent from being garbage collected,
+		// such as pin it
+		dsk := core.FilesRootKey()
+		val, err := repo.Datastore().Get(dsk)
+		switch {
+		case err == ds.ErrNotFound || val == nil:
+			cmds.EmitOnce(res, &MessageOutput{"Files API root not found.\n"})
+		default:
+			var cidStr string
+			c, err := cid.Cast(val.([]byte))
+			if err == nil {
+				cidStr = c.String()
+			} else {
+				cidStr = b58.Encode(val.([]byte))
+			}
+			err = repo.Datastore().Delete(dsk)
+			if err != nil {
+				res.SetError(fmt.Errorf("unable to remove API root: %s.  Root hash was %s", err.Error(), cidStr), cmdkit.ErrNormal)
+				return
+			}
+			cmds.EmitOnce(res, &MessageOutput{fmt.Sprintf("Unlinked files API root.  Root hash was %s.\n", cidStr)})
+		}
+		repo.Close()
+	},
+	Type: MessageOutput{},
+	Encoders: cmds.EncoderMap{
+		cmds.Text: cmds.MakeEncoder(func(req *cmds.Request, w io.Writer, v interface{}) error {
+			msg, ok := v.(*MessageOutput)
+			if !ok {
+				return e.TypeErr(msg, v)
+			}
+			_, err := fmt.Fprintf(w, "%s", msg.Message)
+			return err
+		}),
 	},
 }
 
