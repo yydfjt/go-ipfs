@@ -300,31 +300,31 @@ This command can only run when the ipfs daemon is not running.
 			res.SetError(err, cmdkit.ErrNormal)
 			return
 		}
+		defer repo.Close()
 
 		// Get the old root and display it to the user so that they can
 		// can do something to prevent from being garbage collected,
 		// such as pin it
 		dsk := core.FilesRootKey()
 		val, err := repo.Datastore().Get(dsk)
-		switch {
-		case err == ds.ErrNotFound || val == nil:
+		if err == ds.ErrNotFound || val == nil {
+		if case err == ds.ErrNotFound || val == nil {
 			cmds.EmitOnce(res, &MessageOutput{"Files API root not found.\n"})
-		default:
-			var cidStr string
-			c, err := cid.Cast(val.([]byte))
-			if err == nil {
-				cidStr = c.String()
-			} else {
-				cidStr = b58.Encode(val.([]byte))
-			}
-			err = repo.Datastore().Delete(dsk)
-			if err != nil {
-				res.SetError(fmt.Errorf("unable to remove API root: %s.  Root hash was %s", err.Error(), cidStr), cmdkit.ErrNormal)
-				return
-			}
-			cmds.EmitOnce(res, &MessageOutput{fmt.Sprintf("Unlinked files API root.  Root hash was %s.\n", cidStr)})
+			return
 		}
-		repo.Close()
+		var cidStr string
+		c, err := cid.Cast(val.([]byte))
+		if err == nil {
+			cidStr = c.String()
+		} else {
+			cidStr = b58.Encode(val.([]byte))
+		}
+		err = repo.Datastore().Delete(dsk)
+		if err != nil {
+			res.SetError(fmt.Errorf("unable to remove API root: %s.  Root hash was %s", err.Error(), cidStr), cmdkit.ErrNormal)
+			return
+		}
+		cmds.EmitOnce(res, &MessageOutput{fmt.Sprintf("Unlinked files API root.  Root hash was %s.\n", cidStr)})
 	},
 	Type: MessageOutput{},
 	Encoders: cmds.EncoderMap{
