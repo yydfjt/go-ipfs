@@ -285,7 +285,19 @@ loss if there are unpinned nodes connected to the root.
 This command can only run when the ipfs daemon is not running.
 `,
 	},
+	Options: []cmdkit.Option{
+		cmdkit.BoolOption("confirm", "Really perform operation."),
+		cmdkit.BoolOption("remove-local-root", "Remove even if the root exists locally."),
+	},
 	Run: func(req *cmds.Request, res cmds.ResponseEmitter, env cmds.Environment) {
+		confirm, _ := req.Options["confirm"].(bool)
+		removeLocalRoot, _ := req.Options["remove-local-root"].(bool)
+
+		if !confirm {
+			res.SetError(fmt.Errorf("this is a potentially dangerous operation please pass --confirm to proceed"), cmdkit.ErrNormal)
+			return
+		}
+
 		ctx, ok := env.(*oldcmds.Context)
 		if !ok {
 			res.SetError(fmt.Errorf("expected env to be of type %T, got %T", ctx, env), cmdkit.ErrNormal)
@@ -301,6 +313,7 @@ This command can only run when the ipfs daemon is not running.
 			return
 		}
 		defer repo.Close()
+		bs := bstore.NewBlockstore(repo.Datastore())
 
 		// Get the old root and display it to the user so that they can
 		// can do something to prevent from being garbage collected,
@@ -308,17 +321,25 @@ This command can only run when the ipfs daemon is not running.
 		dsk := core.FilesRootKey()
 		val, err := repo.Datastore().Get(dsk)
 		if err == ds.ErrNotFound || val == nil {
-		if case err == ds.ErrNotFound || val == nil {
 			cmds.EmitOnce(res, &MessageOutput{"Files API root not found.\n"})
 			return
 		}
+
 		var cidStr string
+		var have bool
 		c, err := cid.Cast(val.([]byte))
 		if err == nil {
 			cidStr = c.String()
+			have, _ = bs.Has(c)
 		} else {
 			cidStr = b58.Encode(val.([]byte))
 		}
+
+		if have && !removeLocalRoot {
+			res.SetError(fmt.Errorf("root %s exists locally. Are you sure you want to unlink this? Pass --remove-local-root to continue", cidStr), cmdkit.ErrNormal)
+			return
+		}
+
 		err = repo.Datastore().Delete(dsk)
 		if err != nil {
 			res.SetError(fmt.Errorf("unable to remove API root: %s.  Root hash was %s", err.Error(), cidStr), cmdkit.ErrNormal)
