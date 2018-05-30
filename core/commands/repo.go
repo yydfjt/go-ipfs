@@ -273,8 +273,8 @@ var repoRmRootCmd = &cmds.Command{
 		ShortDescription: `
 'ipfs repo rm-root' will unlink the root used by the files API ('ipfs
 files' commands) without trying to read the root itself.  The root and
-its children will then be removed by the garbage collector unless
-pinned.
+its children will be removed the next time the garbage collector runs,
+unless pinned.
 
 This command is designed to recover form the situation when the root
 becomes unavailable and recovering it (such as recreating it, or
