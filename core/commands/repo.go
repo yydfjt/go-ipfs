@@ -338,6 +338,9 @@ This command can only run when the ipfs daemon is not running.
 		if have && !removeLocalRoot {
 			res.SetError(fmt.Errorf("root %s exists locally. Are you sure you want to unlink this? Pass --remove-local-root to continue", cidStr), cmdkit.ErrNormal)
 			return
+		} else if !have && removeLocalRoot {
+			res.SetError(fmt.Errorf("root does not %s exists locally. Please remove --remove-local-root to continue", cidStr), cmdkit.ErrNormal)
+			return
 		}
 
 		err = repo.Datastore().Delete(dsk)
