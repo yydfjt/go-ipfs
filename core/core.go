@@ -37,8 +37,6 @@ import (
 	config "github.com/ipfs/go-ipfs/repo/config"
 	ft "github.com/ipfs/go-ipfs/unixfs"
 
-	dht "gx/ipfs/QmNg6M98bwS97SL9ArvrRxKujFps3eV6XvmKgduiYga8Bn/go-libp2p-kad-dht"
-	dhtopts "gx/ipfs/QmNg6M98bwS97SL9ArvrRxKujFps3eV6XvmKgduiYga8Bn/go-libp2p-kad-dht/opts"
 	u "gx/ipfs/QmPdKqUcHGFdeSpvjVoaTRPPstGif9GBZb5Q56RVw9o69A/go-ipfs-util"
 	routing "gx/ipfs/QmPpdpS9fknTBM3qHDcpayU6nYPZQeVjia2fbNrD8YWDe6/go-libp2p-routing"
 	psrouter "gx/ipfs/QmPxCZ99jTHMxD93qQV4pN3WJbBHrBLCQiumWDgfJjFQJy/go-libp2p-pubsub-router"
@@ -75,6 +73,8 @@ import (
 	bstore "gx/ipfs/QmdpuJBPBZ6sLPj9BQpn3Rpi38BT2cF1QMiUfyzNWeySW4/go-ipfs-blockstore"
 	ic "gx/ipfs/Qme1knMqwt1hKZbc1BmQFmnm9f36nyQGwXxPGVpVJ9rMK5/go-libp2p-crypto"
 	ds "gx/ipfs/QmeiCcJfDW1GJnWUArudsv5rQsihpi4oyddPhdqo3CfX6i/go-datastore"
+	dht "gx/ipfs/Qmf3EoxxjDTjrFY91ACxNvvjgiucgAc6Xy4d9MQ9fVvrG6/go-libp2p-kad-dht"
+	dhtopts "gx/ipfs/Qmf3EoxxjDTjrFY91ACxNvvjgiucgAc6Xy4d9MQ9fVvrG6/go-libp2p-kad-dht/opts"
 )
 
 const IpnsValidatorTag = "ipns"

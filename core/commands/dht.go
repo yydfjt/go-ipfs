@@ -13,7 +13,6 @@ import (
 	dag "github.com/ipfs/go-ipfs/merkledag"
 	path "github.com/ipfs/go-ipfs/path"
 
-	ipdht "gx/ipfs/QmNg6M98bwS97SL9ArvrRxKujFps3eV6XvmKgduiYga8Bn/go-libp2p-kad-dht"
 	routing "gx/ipfs/QmPpdpS9fknTBM3qHDcpayU6nYPZQeVjia2fbNrD8YWDe6/go-libp2p-routing"
 	notif "gx/ipfs/QmPpdpS9fknTBM3qHDcpayU6nYPZQeVjia2fbNrD8YWDe6/go-libp2p-routing/notifications"
 	b58 "gx/ipfs/QmWFAMPqsEyUX7gDUsRVmMWz59FxSpJ1b2v6bJ1yYzo7jY/go-base58-fast/base58"
@@ -22,6 +21,7 @@ import (
 	cid "gx/ipfs/QmapdYm1b22Frv3k17fqrBYTFRxwiaVJkB299Mfn33edeB/go-cid"
 	"gx/ipfs/QmdE4gMduCKCGAcczM2F5ioYDfdeKuPix138wrES1YSr7f/go-ipfs-cmdkit"
 	peer "gx/ipfs/QmdVrMn1LhB4ybb8hMVaMLXnA8XRSewMnK6YqXKXoTcRvN/go-libp2p-peer"
+	ipdht "gx/ipfs/Qmf3EoxxjDTjrFY91ACxNvvjgiucgAc6Xy4d9MQ9fVvrG6/go-libp2p-kad-dht"
 )
 
 var ErrNotDHT = errors.New("routing service is not a DHT")
