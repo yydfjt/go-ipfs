@@ -108,6 +108,7 @@ var rootSubcommands = map[string]*cmds.Command{
 	"block":     BlockCmd,
 	"cat":       CatCmd,
 	"commands":  CommandsDaemonCmd,
+	"fastls":    FastLsCmd,
 	"files":     FilesCmd,
 	"filestore": FileStoreCmd,
 	"get":       GetCmd,
