@@ -560,21 +560,21 @@
     },
     {
       "author": "why",
-      "hash": "QmRy4Qk9hbgFX9NGJRm8rBThrA8PZhNCitMgeRYyZ67s59",
+      "hash": "QmfGzdovkTAhGni3Wfg2fTEtNxhpwWSyAJWW2cC1pWM9TS",
       "name": "go-merkledag",
-      "version": "1.0.0"
-    },
-    {
-      "author": "why",
-      "hash": "QmYKNMEUK7nCVAefgXF1LVtZEZg3uRmBqiae4FJRXDNAyJ",
-      "name": "go-path",
       "version": "1.0.1"
     },
     {
       "author": "why",
-      "hash": "QmSaz8Qg77gGqvDvLKeSAY7ivDEnramSWF6T7TcRwFpHtP",
+      "hash": "QmSx7Fv8e2QenkYqRP865pTaMEMpwjmnyZqJXTfAwRuiBU",
+      "name": "go-path",
+      "version": "1.0.2"
+    },
+    {
+      "author": "why",
+      "hash": "QmeoBC7eiuWuMvRwYNYg5rBHZk1rizyfnsMBrkojhrPNkX",
       "name": "go-unixfs",
-      "version": "1.0.0"
+      "version": "1.0.1"
     }
   ],
   "gxVersion": "0.10.0",
