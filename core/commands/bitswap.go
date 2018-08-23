@@ -15,8 +15,8 @@ import (
 	"gx/ipfs/QmPSBJL4momYnE7DcUyk2DVhD6rH488ZmHBGLbxNdhU44K/go-humanize"
 	peer "gx/ipfs/QmQsErDt8Qgw1XrsXf2BpEzDgGWtB1YLsTAARBup5b6B9W/go-libp2p-peer"
 	cmdkit "gx/ipfs/QmSP88ryZkHSRn1fnngAaV2Vcn63WUJzAavnRM9CVdU1Ky/go-ipfs-cmdkit"
+	cmds "gx/ipfs/QmSwR1QndLsdnw2mpW2rrywoCUPeY7o8UxtK1dLpPCNFGD/go-ipfs-cmds"
 	cid "gx/ipfs/QmZFbDTY9jfSBms2MchvYM9oYRbAF19K7Pby47yDBfpPrb/go-cid"
-	cmds "gx/ipfs/QmZVPuwGNz2s9THwLS4psrJGam6NSEQMvDTaaZgNfqQBCE/go-ipfs-cmds"
 )
 
 var BitswapCmd = &cmds.Command{

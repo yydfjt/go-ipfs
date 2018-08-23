@@ -18,9 +18,9 @@ import (
 
 	dag "gx/ipfs/QmRiQCJZ91B7VNmLvA6sxzDuBJGSojS3uXHHVuNr3iueNZ/go-merkledag"
 	cmdkit "gx/ipfs/QmSP88ryZkHSRn1fnngAaV2Vcn63WUJzAavnRM9CVdU1Ky/go-ipfs-cmdkit"
+	cmds "gx/ipfs/QmSwR1QndLsdnw2mpW2rrywoCUPeY7o8UxtK1dLpPCNFGD/go-ipfs-cmds"
 	ipld "gx/ipfs/QmX5CsuHyVZeTLxgRSYkgLSDQKb9UjE8xnhQzCEJWWWFsC/go-ipld-format"
 	cid "gx/ipfs/QmZFbDTY9jfSBms2MchvYM9oYRbAF19K7Pby47yDBfpPrb/go-cid"
-	cmds "gx/ipfs/QmZVPuwGNz2s9THwLS4psrJGam6NSEQMvDTaaZgNfqQBCE/go-ipfs-cmds"
 )
 
 // ErrObjectTooLarge is returned when too much data was read from stdin. current limit 2m

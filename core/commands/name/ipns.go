@@ -14,7 +14,7 @@ import (
 
 	logging "gx/ipfs/QmRREK2CAZ5Re2Bd9zZFG6FeYDppUWt5cMgsoUEp3ktgSr/go-log"
 	"gx/ipfs/QmSP88ryZkHSRn1fnngAaV2Vcn63WUJzAavnRM9CVdU1Ky/go-ipfs-cmdkit"
-	cmds "gx/ipfs/QmZVPuwGNz2s9THwLS4psrJGam6NSEQMvDTaaZgNfqQBCE/go-ipfs-cmds"
+	cmds "gx/ipfs/QmSwR1QndLsdnw2mpW2rrywoCUPeY7o8UxtK1dLpPCNFGD/go-ipfs-cmds"
 	offline "gx/ipfs/Qmd45r5jHr1PKMNQqifnbZy1ZQwHdtXUDJFamUEvUJE544/go-ipfs-routing/offline"
 	path "gx/ipfs/QmdMPBephdLYNESkruDX2hcDTgFYhoCt4LimWhgnomSdV2/go-path"
 )
