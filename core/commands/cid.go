@@ -40,7 +40,7 @@ The optional format string is a printf style format string:
 ` + cidutil.FormatRef,
 	},
 	Arguments: []cmdkit.Argument{
-		cmdkit.StringArg("cid", true, true, "Cids to format.").EnableStdin(),
+		cmdkit.StringArg("cid", true, true, "Cids to format."),
 	},
 	Options: []cmdkit.Option{
 		cmdkit.StringOption("f", "Printf style format string.").WithDefault("%s"),
@@ -130,48 +130,38 @@ type cidFormatOpts struct {
 }
 
 func emitCids(req *cmds.Request, resp cmds.ResponseEmitter, opts cidFormatOpts) {
-	out := make(chan interface{}, 128)
-	ctx := req.Context
-	go func() {
-		defer close(out)
-		for _, cidStr := range req.Arguments {
-			emit := func(fmtd string, err error) {
-				res := &CidFormatRes{CidStr: cidStr, Formatted: fmtd}
-				if err != nil {
-					res.ErrorMsg = err.Error()
-				}
-				select {
-				case <-ctx.Done():
-					resp.SetError(ctx.Err(), cmdkit.ErrNormal)
-				case out <- res:
-				}
+	for _, cidStr := range req.Arguments {
+		emit := func(fmtd string, err error) {
+			res := &CidFormatRes{CidStr: cidStr, Formatted: fmtd}
+			if err != nil {
+				res.ErrorMsg = err.Error()
 			}
-			c, err := cid.Decode(cidStr)
+			resp.Emit(res)
+		}
+		c, err := cid.Decode(cidStr)
+		if err != nil {
+			emit("", err)
+			continue
+		}
+		base := opts.newBase
+		if base == -1 {
+			base, _ = cid.ExtractEncoding(cidStr)
+		}
+		if opts.verConv != nil {
+			c, err = opts.verConv(c)
 			if err != nil {
 				emit("", err)
 				continue
 			}
-			base := opts.newBase
-			if base == -1 {
-				base, _ = cid.ExtractEncoding(cidStr)
-			}
-			if opts.verConv != nil {
-				c, err = opts.verConv(c)
-				if err != nil {
-					emit("", err)
-					continue
-				}
-			}
-			str, err := cidutil.Format(opts.fmtStr, base, c)
-			if _, ok := err.(cidutil.FormatStringError); ok {
-				// no point in continuing if there is a problem with the format string
-				resp.SetError(err, cmdkit.ErrNormal)
-				return
-			}
-			emit(str, err)
 		}
-	}()
-	resp.Emit(out)
+		str, err := cidutil.Format(opts.fmtStr, base, c)
+		if _, ok := err.(cidutil.FormatStringError); ok {
+			// no point in continuing if there is a problem with the format string
+			resp.SetError(err, cmdkit.ErrNormal)
+			return
+		}
+		emit(str, err)
+	}
 }
 
 func toCidV0(c *cid.Cid) (*cid.Cid, error) {
