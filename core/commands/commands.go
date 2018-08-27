@@ -8,6 +8,7 @@ package commands
 import (
 	"fmt"
 	"io"
+	"os"
 	"sort"
 	"strings"
 
@@ -151,4 +152,47 @@ func unwrapOutput(i interface{}) (interface{}, error) {
 	}
 
 	return <-ch, nil
+}
+
+type nonFatalError string
+
+// streamRes is a helper function to stream results, that possibly
+// contain with non-fatal, the helper function is allowed to panic on
+// internal errors
+func streamRes(procVal func(interface{}, io.Writer) nonFatalError) func(*cmds.Request, cmds.ResponseEmitter) cmds.ResponseEmitter {
+	return func(req *cmds.Request, re cmds.ResponseEmitter) cmds.ResponseEmitter {
+		reNext, res := cmds.NewChanResponsePair(req)
+
+		go func() {
+			defer func() {
+				if r := recover(); r != nil {
+					err := fmt.Errorf("internal error: %v", r)
+					re.SetError(fmt.Errorf("internal error: %v", r), cmdkit.ErrNormal)
+					log.Error(e.New(err))
+				}
+				re.Close()
+			}()
+
+			var errors bool
+			for {
+				v, err := res.Next()
+				if !cmds.HandleError(err, res, re) {
+					break
+				}
+
+				errorMsg := procVal(v, os.Stdout)
+
+				if errorMsg != "" {
+					errors = true
+					fmt.Fprintf(os.Stderr, "%s\n", errorMsg)
+				}
+			}
+
+			if errors {
+				re.SetError("errors while displaying some entries", cmdkit.ErrNormal)
+			}
+		}()
+
+		return reNext
+	}
 }

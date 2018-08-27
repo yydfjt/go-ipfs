@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"os"
 
 	oldCmds "github.com/ipfs/go-ipfs/commands"
 	lgc "github.com/ipfs/go-ipfs/commands/legacy"
@@ -80,40 +79,14 @@ The output is:
 		}
 	},
 	PostRun: cmds.PostRunMap{
-		cmds.CLI: func(req *cmds.Request, re cmds.ResponseEmitter) cmds.ResponseEmitter {
-			reNext, res := cmds.NewChanResponsePair(req)
-
-			go func() {
-				defer re.Close()
-
-				var errors bool
-				for {
-					v, err := res.Next()
-					if !cmds.HandleError(err, res, re) {
-						break
-					}
-
-					r, ok := v.(*filestore.ListRes)
-					if !ok {
-						log.Error(e.New(e.TypeErr(r, v)))
-						return
-					}
-
-					if r.ErrorMsg != "" {
-						errors = true
-						fmt.Fprintf(os.Stderr, "%s\n", r.ErrorMsg)
-					} else {
-						fmt.Fprintf(os.Stdout, "%s\n", r.FormatLong())
-					}
-				}
-
-				if errors {
-					re.SetError("errors while displaying some entries", cmdkit.ErrNormal)
-				}
-			}()
-
-			return reNext
-		},
+		cmds.CLI: streamRes(func(v interface{}, out io.Writer) nonFatalError {
+			r := v.(*filestore.ListRes)
+			if r.ErrorMsg != "" {
+				return nonFatalError(r.ErrorMsg)
+			}
+			fmt.Fprintf(out, "%s\n", r.FormatLong())
+			return ""
+		}),
 	},
 	Type: filestore.ListRes{},
 }
