@@ -71,6 +71,7 @@ Resolve the value of a dnslink:
 		cmdkit.BoolOption("nocache", "n", "Do not use cached entries."),
 		cmdkit.UintOption("dht-record-count", "dhtrc", "Number of records to request for DHT resolution."),
 		cmdkit.StringOption("dht-timeout", "dhtt", "Max time to collect values during DHT resolution eg \"30s\". Pass 0 for no timeout."),
+		cmdkit.BoolOption("stream", "s", "Stream entries as they are found."),
 	},
 	Run: func(req *cmds.Request, res cmds.ResponseEmitter, env cmds.Environment) {
 		n, err := cmdenv.GetNode(env)
@@ -122,6 +123,7 @@ Resolve the value of a dnslink:
 		recursive, _ := req.Options["recursive"].(bool)
 		rc, rcok := req.Options["dht-record-count"].(int)
 		dhtt, dhttok := req.Options["dht-timeout"].(string)
+		//stream, _ := req.Options["stream"].(bool)
 		var ropts []nsopts.ResolveOpt
 		if !recursive {
 			ropts = append(ropts, nsopts.Depth(1))
