@@ -156,21 +156,17 @@ func (i *argumentIterator) err() error {
 
 func emitCids(req *cmds.Request, resp cmds.ResponseEmitter, opts cidFormatOpts) {
 	itr := argumentIterator{req.Arguments, req.BodyArgs()}
-	for {
+	var emitErr error
+	for emitErr == nil {
 		cidStr, ok := itr.next()
 		if !ok {
 			break
 		}
-		emit := func(fmtd string, err error) {
-			res := &CidFormatRes{CidStr: cidStr, Formatted: fmtd}
-			if err != nil {
-				res.ErrorMsg = err.Error()
-			}
-			resp.Emit(res)
-		}
+		res := &CidFormatRes{CidStr: cidStr}
 		c, err := cid.Decode(cidStr)
 		if err != nil {
-			emit("", err)
+			res.ErrorMsg = err.Error()
+			emitErr = resp.Emit(res)
 			continue
 		}
 		base := opts.newBase
@@ -180,7 +176,8 @@ func emitCids(req *cmds.Request, resp cmds.ResponseEmitter, opts cidFormatOpts) 
 		if opts.verConv != nil {
 			c, err = opts.verConv(c)
 			if err != nil {
-				emit("", err)
+				res.ErrorMsg = err.Error()
+				emitErr = resp.Emit(res)
 				continue
 			}
 		}
@@ -188,9 +185,17 @@ func emitCids(req *cmds.Request, resp cmds.ResponseEmitter, opts cidFormatOpts) 
 		if _, ok := err.(cidutil.FormatStringError); ok {
 			// no point in continuing if there is a problem with the format string
 			resp.SetError(err, cmdkit.ErrNormal)
-			return
 		}
-		emit(str, err)
+		if err != nil {
+			res.ErrorMsg = err.Error()
+		} else {
+			res.Formatted = str
+		}
+		emitErr = resp.Emit(res)
+	}
+	if emitErr != nil {
+		resp.SetError(emitErr, cmdkit.ErrFatal)
+		return
 	}
 	err := itr.err()
 	if err != nil {
