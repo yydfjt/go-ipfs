@@ -79,7 +79,7 @@ The output is:
 		}
 	},
 	PostRun: cmds.PostRunMap{
-		cmds.CLI: streamRes(func(v interface{}, out io.Writer) nonFatalError {
+		cmds.CLI: streamResults(func(v interface{}, out io.Writer) nonFatalError {
 			r := v.(*filestore.ListRes)
 			if r.ErrorMsg != "" {
 				return nonFatalError(r.ErrorMsg)
