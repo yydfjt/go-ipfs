@@ -17,7 +17,7 @@ import (
 	fsrepo "github.com/ipfs/go-ipfs/repo/fsrepo"
 
 	"gx/ipfs/QmSP88ryZkHSRn1fnngAaV2Vcn63WUJzAavnRM9CVdU1Ky/go-ipfs-cmdkit"
-	config "gx/ipfs/Qmdpmn9dQFSFeCfwpaZdbeYSFxJmbtSTArU4kMZByjmPAJ/go-ipfs-config"
+	config "gx/ipfs/QmXqx3HCCTeSrxN66BqB2x38tZkHcDbbv5gxNpX7UVfgh6/go-ipfs-config"
 )
 
 type ConfigField struct {

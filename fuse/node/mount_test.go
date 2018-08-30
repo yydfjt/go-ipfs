@@ -17,7 +17,7 @@ import (
 	namesys "github.com/ipfs/go-ipfs/namesys"
 
 	ci "gx/ipfs/QmRNhSdqzMcuRxX9A1egBeQ3BhDTguDV5HPwi8wRykkPU8/go-testutil/ci"
-	offroute "gx/ipfs/Qmd45r5jHr1PKMNQqifnbZy1ZQwHdtXUDJFamUEvUJE544/go-ipfs-routing/offline"
+	offroute "gx/ipfs/Qmc8223drxJVSzPRmNnM9kfEzs1jNatNmJ1z22akx12eNS/go-ipfs-routing/offline"
 )
 
 func maybeSkipFuseTests(t *testing.T) {
