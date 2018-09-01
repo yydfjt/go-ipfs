@@ -60,7 +60,7 @@ func (api *BlockAPI) Put(ctx context.Context, src io.Reader, opts ...caopts.Bloc
 		return nil, err
 	}
 
-	err = api.node.Blocks.AddBlock(b)
+	err = api.node.Blockstore.Put(b)
 	if err != nil {
 		return nil, err
 	}

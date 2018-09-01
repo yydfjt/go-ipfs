@@ -3,14 +3,11 @@ package coreapi_test
 import (
 	"context"
 	"io"
-	"io/ioutil"
 	"testing"
 
-	"github.com/ipfs/go-ipfs/core/coreapi/interface"
 	"github.com/ipfs/go-ipfs/core/coreapi/interface/options"
 
-	peer "gx/ipfs/QmQsErDt8Qgw1XrsXf2BpEzDgGWtB1YLsTAARBup5b6B9W/go-libp2p-peer"
-	blocks "gx/ipfs/QmWAzSEoqZ6xU6pu8yL8e5WaMb7wtbfbhhN4p1DknUPtr3/go-block-format"
+	"gx/ipfs/QmQsErDt8Qgw1XrsXf2BpEzDgGWtB1YLsTAARBup5b6B9W/go-libp2p-peer"
 )
 
 func TestDhtFindPeer(t *testing.T) {
@@ -70,17 +67,10 @@ func TestDhtProvide(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// TODO: replace once there is local add on unixfs or somewhere
-	data, err := ioutil.ReadAll(&io.LimitedReader{R: rnd, N: 4092})
-	if err != nil {
-		t.Fatal(err)
-	}
+	p1, err := apis[0].Block().Put(ctx, &io.LimitedReader{R: rnd, N: 4092}, options.Block.Format("raw"))
+	p2, err := apis[0].Block().Put(ctx, &io.LimitedReader{R: rnd, N: 4092}, options.Block.Format("raw"))
 
-	b := blocks.NewBlock(data)
-	nds[0].Blockstore.Put(b)
-	p := iface.IpfsPath(b.Cid())
-
-	out, err := apis[2].Dht().FindProviders(ctx, p, options.Dht.NumProviders(1))
+	out, err := apis[2].Dht().FindProviders(ctx, p1, options.Dht.NumProviders(1))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -91,12 +81,28 @@ func TestDhtProvide(t *testing.T) {
 		t.Errorf("got wrong provider: %s != %s", provider.ID.String(), nds[0].Identity.String())
 	}
 
-	err = apis[0].Dht().Provide(ctx, p)
+	err = apis[0].Dht().Provide(ctx, p1)
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	out, err = apis[2].Dht().FindProviders(ctx, p, options.Dht.NumProviders(1))
+	out, err = apis[2].Dht().FindProviders(ctx, p1, options.Dht.NumProviders(1))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	provider = <-out
+
+	if provider.ID.String() != nds[0].Identity.String() {
+		t.Errorf("got wrong provider: %s != %s", provider.ID.String(), nds[0].Identity.String())
+	}
+
+	err = apis[0].Dht().Provide(ctx, p2, options.Dht.Recursive(true))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	out, err = apis[2].Dht().FindProviders(ctx, p2, options.Dht.NumProviders(1))
 	if err != nil {
 		t.Fatal(err)
 	}

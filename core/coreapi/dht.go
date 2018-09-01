@@ -108,13 +108,18 @@ func provideKeysRec(ctx context.Context, r routing.IpfsRouting, bs blockstore.Bl
 			err := dag.EnumerateChildrenAsync(ctx, dag.GetLinksDirect(dserv), c, provided.Visitor(ctx))
 			if err != nil {
 				errCh <- err
+				break
 			}
 		}
+		close(provided.New)
 	}()
 
 	for {
 		select {
-		case k := <-provided.New:
+		case k, ok := <-provided.New:
+			if !ok {
+				return nil
+			}
 			err := r.Provide(ctx, k, true)
 			if err != nil {
 				return err
