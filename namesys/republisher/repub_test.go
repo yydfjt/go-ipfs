@@ -7,14 +7,15 @@ import (
 	"time"
 
 	"github.com/ipfs/go-ipfs/core"
+	"github.com/ipfs/go-ipfs/core/bootstrap"
 	mock "github.com/ipfs/go-ipfs/core/mock"
 	namesys "github.com/ipfs/go-ipfs/namesys"
 	. "github.com/ipfs/go-ipfs/namesys/republisher"
-	path "gx/ipfs/QmTKaiDxQqVxmA1bRipSuP7hnTSgnMSmEa98NYeS6fcoiv/go-path"
+	path "github.com/ipfs/go-path"
 
-	goprocess "gx/ipfs/QmSF8fPo3jgVBAy8fpdjjYqgG87dkJgUprRBHRd2tmfgpP/goprocess"
-	pstore "gx/ipfs/QmeKD8YT7887Xu6Z86iZmpYNxrLogJexqxEugSmaf14k64/go-libp2p-peerstore"
-	mocknet "gx/ipfs/Qmf1u2efhjXYtuyP8SMHYtw4dCkbghnniex2PSp7baA7FP/go-libp2p/p2p/net/mock"
+	goprocess "github.com/jbenet/goprocess"
+	peer "github.com/libp2p/go-libp2p-core/peer"
+	mocknet "github.com/libp2p/go-libp2p/p2p/net/mock"
 )
 
 func TestRepublish(t *testing.T) {
@@ -41,10 +42,12 @@ func TestRepublish(t *testing.T) {
 		nodes = append(nodes, nd)
 	}
 
-	mn.LinkAll()
+	if err := mn.LinkAll(); err != nil {
+		t.Fatal(err)
+	}
 
-	bsinf := core.BootstrapConfigWithPeers(
-		[]pstore.PeerInfo{
+	bsinf := bootstrap.BootstrapConfigWithPeers(
+		[]peer.AddrInfo{
 			nodes[0].Peerstore.PeerInfo(nodes[0].Identity),
 		},
 	)

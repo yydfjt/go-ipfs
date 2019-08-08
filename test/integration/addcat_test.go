@@ -11,17 +11,17 @@ import (
 	"testing"
 	"time"
 
-	random "github.com/ipfs/go-ipfs/Godeps/_workspace/src/github.com/jbenet/go-random"
-
+	files "github.com/ipfs/go-ipfs-files"
 	"github.com/ipfs/go-ipfs/core"
-	coreunix "github.com/ipfs/go-ipfs/core/coreunix"
+	"github.com/ipfs/go-ipfs/core/bootstrap"
+	"github.com/ipfs/go-ipfs/core/coreapi"
 	mock "github.com/ipfs/go-ipfs/core/mock"
 	"github.com/ipfs/go-ipfs/thirdparty/unit"
-
-	testutil "gx/ipfs/QmRNhSdqzMcuRxX9A1egBeQ3BhDTguDV5HPwi8wRykkPU8/go-testutil"
-	logging "gx/ipfs/QmRREK2CAZ5Re2Bd9zZFG6FeYDppUWt5cMgsoUEp3ktgSr/go-log"
-	pstore "gx/ipfs/QmeKD8YT7887Xu6Z86iZmpYNxrLogJexqxEugSmaf14k64/go-libp2p-peerstore"
-	mocknet "gx/ipfs/Qmf1u2efhjXYtuyP8SMHYtw4dCkbghnniex2PSp7baA7FP/go-libp2p/p2p/net/mock"
+	logging "github.com/ipfs/go-log"
+	random "github.com/jbenet/go-random"
+	peer "github.com/libp2p/go-libp2p-core/peer"
+	testutil "github.com/libp2p/go-libp2p-testing/net"
+	mocknet "github.com/libp2p/go-libp2p/p2p/net/mock"
 )
 
 var log = logging.Logger("epictest")
@@ -84,8 +84,11 @@ func AddCatPowers(conf testutil.LatencyConfig, megabytesMax int64) error {
 }
 
 func RandomBytes(n int64) []byte {
-	data := new(bytes.Buffer)
-	random.WritePseudoRandomBytes(n, data, kSeed)
+	var data bytes.Buffer
+	err := random.WritePseudoRandomBytes(n, &data, kSeed)
+	if err != nil {
+		panic(err)
+	}
 	return data.Bytes()
 }
 
@@ -119,39 +122,51 @@ func DirectAddCat(data []byte, conf testutil.LatencyConfig) error {
 	}
 	defer catter.Close()
 
+	adderApi, err := coreapi.NewCoreAPI(adder)
+	if err != nil {
+		return err
+	}
+
+	catterApi, err := coreapi.NewCoreAPI(catter)
+	if err != nil {
+		return err
+	}
+
 	err = mn.LinkAll()
 	if err != nil {
 		return err
 	}
 
-	bs1 := []pstore.PeerInfo{adder.Peerstore.PeerInfo(adder.Identity)}
-	bs2 := []pstore.PeerInfo{catter.Peerstore.PeerInfo(catter.Identity)}
+	bs1 := []peer.AddrInfo{adder.Peerstore.PeerInfo(adder.Identity)}
+	bs2 := []peer.AddrInfo{catter.Peerstore.PeerInfo(catter.Identity)}
 
-	if err := catter.Bootstrap(core.BootstrapConfigWithPeers(bs1)); err != nil {
+	if err := catter.Bootstrap(bootstrap.BootstrapConfigWithPeers(bs1)); err != nil {
 		return err
 	}
-	if err := adder.Bootstrap(core.BootstrapConfigWithPeers(bs2)); err != nil {
+	if err := adder.Bootstrap(bootstrap.BootstrapConfigWithPeers(bs2)); err != nil {
 		return err
 	}
 
-	added, err := coreunix.Add(adder, bytes.NewReader(data))
+	added, err := adderApi.Unixfs().Add(ctx, files.NewBytesFile(data))
 	if err != nil {
 		return err
 	}
 
-	readerCatted, err := coreunix.Cat(ctx, catter, added)
+	readerCatted, err := catterApi.Unixfs().Get(ctx, added)
 	if err != nil {
 		return err
 	}
 
 	// verify
-	bufout := new(bytes.Buffer)
-	io.Copy(bufout, readerCatted)
-	if 0 != bytes.Compare(bufout.Bytes(), data) {
+	var bufout bytes.Buffer
+	_, err = io.Copy(&bufout, readerCatted.(io.Reader))
+	if err != nil {
+		return err
+	}
+	if !bytes.Equal(bufout.Bytes(), data) {
 		return errors.New("catted data does not match added data")
 	}
 
-	cancel()
 	return nil
 }
 

@@ -4,19 +4,18 @@ import (
 	"context"
 	"fmt"
 	"testing"
-	"time"
 
-	opts "github.com/ipfs/go-ipfs/namesys/opts"
-	path "gx/ipfs/QmTKaiDxQqVxmA1bRipSuP7hnTSgnMSmEa98NYeS6fcoiv/go-path"
-	"gx/ipfs/QmVNEJ5Vk1e2G5kHMiuVbpD6VQZiK1oS6aWZKjcUQW7hEy/go-unixfs"
-
-	ipns "gx/ipfs/QmNqBhXpBKa5jcjoUZHfxDgAFxtqK3rDA5jtW811GBvVob/go-ipns"
-	ci "gx/ipfs/QmPvyPwuCgJ7pDmrKDxRtsScJgBaM5h4EpRL2qQJsmXf4n/go-libp2p-crypto"
-	peer "gx/ipfs/QmQsErDt8Qgw1XrsXf2BpEzDgGWtB1YLsTAARBup5b6B9W/go-libp2p-peer"
-	ds "gx/ipfs/QmVG5gxteQNEMhrS8prJSmU2C9rebtFuTd3SYZ5kE3YZ5k/go-datastore"
-	dssync "gx/ipfs/QmVG5gxteQNEMhrS8prJSmU2C9rebtFuTd3SYZ5kE3YZ5k/go-datastore/sync"
-	offroute "gx/ipfs/QmZdn8S4FLTfDrmLZb7JoLkrRvTYnyuMWEG6ZGZ3YKwEiK/go-ipfs-routing/offline"
-	pstore "gx/ipfs/QmeKD8YT7887Xu6Z86iZmpYNxrLogJexqxEugSmaf14k64/go-libp2p-peerstore"
+	ds "github.com/ipfs/go-datastore"
+	dssync "github.com/ipfs/go-datastore/sync"
+	offroute "github.com/ipfs/go-ipfs-routing/offline"
+	ipns "github.com/ipfs/go-ipns"
+	path "github.com/ipfs/go-path"
+	"github.com/ipfs/go-unixfs"
+	opts "github.com/ipfs/interface-go-ipfs-core/options/namesys"
+	ci "github.com/libp2p/go-libp2p-core/crypto"
+	peer "github.com/libp2p/go-libp2p-core/peer"
+	pstoremem "github.com/libp2p/go-libp2p-peerstore/pstoremem"
+	record "github.com/libp2p/go-libp2p-record"
 )
 
 type mockResolver struct {
@@ -38,9 +37,12 @@ func testResolution(t *testing.T, resolver Resolver, name string, depth uint, ex
 	}
 }
 
-func (r *mockResolver) resolveOnce(ctx context.Context, name string, opts *opts.ResolveOpts) (path.Path, time.Duration, error) {
+func (r *mockResolver) resolveOnceAsync(ctx context.Context, name string, options opts.ResolveOpts) <-chan onceResult {
 	p, err := path.ParsePath(r.entries[name])
-	return p, 0, err
+	out := make(chan onceResult, 1)
+	out <- onceResult{value: p, err: err}
+	close(out)
+	return out
 }
 
 func mockResolverOne() *mockResolver {
@@ -49,6 +51,7 @@ func mockResolverOne() *mockResolver {
 			"QmatmE9msSfkKxoffpHwNLNKgwZG8eT9Bud6YoPab52vpy": "/ipfs/Qmcqtw8FfrVSBaRmbWwHxt3AuySBhJLcvmFYi3Lbc4xnwj",
 			"QmbCMUZw6JFeZ7Wp9jkzbye3Fzp2GGcPgC3nmeUjfVF87n": "/ipns/QmatmE9msSfkKxoffpHwNLNKgwZG8eT9Bud6YoPab52vpy",
 			"QmY3hE8xgFCjGcz6PHgnvJz5HZi1BaKRfPkn1ghZUcYMjD": "/ipns/ipfs.io",
+			"QmQ4QZh8nrsczdUEwTyfBope4THUhqxqc1fx6qYhhzZQei": "/ipfs/QmP3ouCnU8NNLsW6261pAx2pNLV2E4dQoisB1sgda12Act",
 		},
 	}
 }
@@ -56,7 +59,8 @@ func mockResolverOne() *mockResolver {
 func mockResolverTwo() *mockResolver {
 	return &mockResolver{
 		entries: map[string]string{
-			"ipfs.io": "/ipns/QmbCMUZw6JFeZ7Wp9jkzbye3Fzp2GGcPgC3nmeUjfVF87n",
+			"ipfs.io":                "/ipns/QmbCMUZw6JFeZ7Wp9jkzbye3Fzp2GGcPgC3nmeUjfVF87n",
+			"www.wealdtech.eth.link": "/ipns/QmQ4QZh8nrsczdUEwTyfBope4THUhqxqc1fx6qYhhzZQei",
 		},
 	}
 }
@@ -78,6 +82,8 @@ func TestNamesysResolution(t *testing.T) {
 	testResolution(t, r, "/ipns/QmY3hE8xgFCjGcz6PHgnvJz5HZi1BaKRfPkn1ghZUcYMjD", 1, "/ipns/ipfs.io", ErrResolveRecursion)
 	testResolution(t, r, "/ipns/QmY3hE8xgFCjGcz6PHgnvJz5HZi1BaKRfPkn1ghZUcYMjD", 2, "/ipns/QmbCMUZw6JFeZ7Wp9jkzbye3Fzp2GGcPgC3nmeUjfVF87n", ErrResolveRecursion)
 	testResolution(t, r, "/ipns/QmY3hE8xgFCjGcz6PHgnvJz5HZi1BaKRfPkn1ghZUcYMjD", 3, "/ipns/QmatmE9msSfkKxoffpHwNLNKgwZG8eT9Bud6YoPab52vpy", ErrResolveRecursion)
+	testResolution(t, r, "/ipns/www.wealdtech.eth", 1, "/ipns/QmQ4QZh8nrsczdUEwTyfBope4THUhqxqc1fx6qYhhzZQei", ErrResolveRecursion)
+	testResolution(t, r, "/ipns/www.wealdtech.eth", 2, "/ipfs/QmP3ouCnU8NNLsW6261pAx2pNLV2E4dQoisB1sgda12Act", nil)
 }
 
 func TestPublishWithCache0(t *testing.T) {
@@ -86,7 +92,7 @@ func TestPublishWithCache0(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	ps := pstore.NewPeerstore()
+	ps := pstoremem.NewPeerstore()
 	pid, err := peer.IDFromPrivateKey(priv)
 	if err != nil {
 		t.Fatal(err)
@@ -96,12 +102,18 @@ func TestPublishWithCache0(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	routing := offroute.NewOfflineRouter(dst, ipns.Validator{KeyBook: ps})
+	routing := offroute.NewOfflineRouter(dst, record.NamespacedValidator{
+		"ipns": ipns.Validator{KeyBook: ps},
+		"pk":   record.PublicKeyValidator{},
+	})
 
 	nsys := NewNameSystem(routing, dst, 0)
 	p, err := path.ParsePath(unixfs.EmptyDirNode().Cid().String())
 	if err != nil {
 		t.Fatal(err)
 	}
-	nsys.Publish(context.Background(), priv, p)
+	err = nsys.Publish(context.Background(), priv, p)
+	if err != nil {
+		t.Fatal(err)
+	}
 }

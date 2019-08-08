@@ -7,24 +7,24 @@ import (
 	"time"
 
 	pin "github.com/ipfs/go-ipfs/pin"
-	path "gx/ipfs/QmTKaiDxQqVxmA1bRipSuP7hnTSgnMSmEa98NYeS6fcoiv/go-path"
-	ft "gx/ipfs/QmVNEJ5Vk1e2G5kHMiuVbpD6VQZiK1oS6aWZKjcUQW7hEy/go-unixfs"
 
-	ipns "gx/ipfs/QmNqBhXpBKa5jcjoUZHfxDgAFxtqK3rDA5jtW811GBvVob/go-ipns"
-	pb "gx/ipfs/QmNqBhXpBKa5jcjoUZHfxDgAFxtqK3rDA5jtW811GBvVob/go-ipns/pb"
-	ci "gx/ipfs/QmPvyPwuCgJ7pDmrKDxRtsScJgBaM5h4EpRL2qQJsmXf4n/go-libp2p-crypto"
-	peer "gx/ipfs/QmQsErDt8Qgw1XrsXf2BpEzDgGWtB1YLsTAARBup5b6B9W/go-libp2p-peer"
-	routing "gx/ipfs/QmS4niovD1U6pRjUBXivr1zvvLBqiTKbERjFo994JU7oQS/go-libp2p-routing"
-	ds "gx/ipfs/QmVG5gxteQNEMhrS8prJSmU2C9rebtFuTd3SYZ5kE3YZ5k/go-datastore"
-	dsquery "gx/ipfs/QmVG5gxteQNEMhrS8prJSmU2C9rebtFuTd3SYZ5kE3YZ5k/go-datastore/query"
-	proto "gx/ipfs/QmdxUuburamoF6zF9qjeQC4WYcWGbWuRmdLacMEsW8ioD8/gogo-protobuf/proto"
-	base32 "gx/ipfs/QmfVj3x4D6Jkq9SEoi5n2NmoUomLwoeiwnYz2KQa15wRw6/base32"
+	proto "github.com/gogo/protobuf/proto"
+	ds "github.com/ipfs/go-datastore"
+	dsquery "github.com/ipfs/go-datastore/query"
+	ipns "github.com/ipfs/go-ipns"
+	pb "github.com/ipfs/go-ipns/pb"
+	path "github.com/ipfs/go-path"
+	ft "github.com/ipfs/go-unixfs"
+	ci "github.com/libp2p/go-libp2p-core/crypto"
+	peer "github.com/libp2p/go-libp2p-core/peer"
+	routing "github.com/libp2p/go-libp2p-core/routing"
+	base32 "github.com/whyrusleeping/base32"
 )
 
 const ipnsPrefix = "/ipns/"
 
 const PublishPutValTimeout = time.Minute
-const DefaultRecordTTL = 24 * time.Hour
+const DefaultRecordEOL = 24 * time.Hour
 
 // IpnsPublisher is capable of publishing and resolving names to the IPFS
 // routing system.
@@ -48,7 +48,7 @@ func NewIpnsPublisher(route routing.ValueStore, ds ds.Datastore) *IpnsPublisher 
 // and publishes it out to the routing system
 func (p *IpnsPublisher) Publish(ctx context.Context, k ci.PrivKey, value path.Path) error {
 	log.Debugf("Publish %s", value)
-	return p.PublishWithEOL(ctx, k, value, time.Now().Add(DefaultRecordTTL))
+	return p.PublishWithEOL(ctx, k, value, time.Now().Add(DefaultRecordEOL))
 }
 
 func IpnsDsKey(id peer.ID) ds.Key {

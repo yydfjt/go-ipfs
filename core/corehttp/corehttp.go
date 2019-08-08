@@ -12,11 +12,11 @@ import (
 	"time"
 
 	core "github.com/ipfs/go-ipfs/core"
-	logging "gx/ipfs/QmRREK2CAZ5Re2Bd9zZFG6FeYDppUWt5cMgsoUEp3ktgSr/go-log"
-	"gx/ipfs/QmSF8fPo3jgVBAy8fpdjjYqgG87dkJgUprRBHRd2tmfgpP/goprocess"
-	periodicproc "gx/ipfs/QmSF8fPo3jgVBAy8fpdjjYqgG87dkJgUprRBHRd2tmfgpP/goprocess/periodic"
-	manet "gx/ipfs/QmV6FjemM1K8oXjrvuq3wuVWWoU2TLDPmNnKrxHzY3v6Ai/go-multiaddr-net"
-	ma "gx/ipfs/QmYmsdtJ3HsodkePE3eU3TsCaP2YvPZJ4LoXnNkDE5Tpt7/go-multiaddr"
+	logging "github.com/ipfs/go-log"
+	"github.com/jbenet/goprocess"
+	periodicproc "github.com/jbenet/goprocess/periodic"
+	ma "github.com/multiformats/go-multiaddr"
+	manet "github.com/multiformats/go-multiaddr-net"
 )
 
 var log = logging.Logger("core/server")
@@ -85,7 +85,7 @@ func Serve(node *core.IpfsNode, lis net.Listener, options ...ServeOption) error 
 	}
 
 	select {
-	case <-node.Process().Closing():
+	case <-node.Process.Closing():
 		return fmt.Errorf("failed to start server, process closing")
 	default:
 	}
@@ -95,7 +95,7 @@ func Serve(node *core.IpfsNode, lis net.Listener, options ...ServeOption) error 
 	}
 
 	var serverError error
-	serverProc := node.Process().Go(func(p goprocess.Process) {
+	serverProc := node.Process.Go(func(p goprocess.Process) {
 		serverError = server.Serve(lis)
 	})
 
@@ -103,7 +103,7 @@ func Serve(node *core.IpfsNode, lis net.Listener, options ...ServeOption) error 
 	select {
 	case <-serverProc.Closed():
 	// if node being closed before server exits, close server
-	case <-node.Process().Closing():
+	case <-node.Process.Closing():
 		log.Infof("server at %s terminating...", addr)
 
 		warnProc := periodicproc.Tick(5*time.Second, func(_ goprocess.Process) {

@@ -1,27 +1,26 @@
 package dagcmd
 
 import (
-	"bytes"
 	"fmt"
 	"io"
 	"math"
 	"strings"
 
-	cmds "github.com/ipfs/go-ipfs/commands"
-	e "github.com/ipfs/go-ipfs/core/commands/e"
-	coredag "github.com/ipfs/go-ipfs/core/coredag"
-	pin "github.com/ipfs/go-ipfs/pin"
-	path "gx/ipfs/QmTKaiDxQqVxmA1bRipSuP7hnTSgnMSmEa98NYeS6fcoiv/go-path"
+	"github.com/ipfs/go-ipfs/core/commands/cmdenv"
+	"github.com/ipfs/go-ipfs/core/coredag"
 
-	mh "gx/ipfs/QmPnFwZ2JXKnXgMw8CdBPxn7FWh6LLdjUjxV1fKHuJnkr8/go-multihash"
-	cmdkit "gx/ipfs/QmSP88ryZkHSRn1fnngAaV2Vcn63WUJzAavnRM9CVdU1Ky/go-ipfs-cmdkit"
-	files "gx/ipfs/QmSP88ryZkHSRn1fnngAaV2Vcn63WUJzAavnRM9CVdU1Ky/go-ipfs-cmdkit/files"
-	ipld "gx/ipfs/QmX5CsuHyVZeTLxgRSYkgLSDQKb9UjE8xnhQzCEJWWWFsC/go-ipld-format"
-	cid "gx/ipfs/QmZFbDTY9jfSBms2MchvYM9oYRbAF19K7Pby47yDBfpPrb/go-cid"
+	cid "github.com/ipfs/go-cid"
+	cidenc "github.com/ipfs/go-cidutil/cidenc"
+	cmds "github.com/ipfs/go-ipfs-cmds"
+	files "github.com/ipfs/go-ipfs-files"
+	ipld "github.com/ipfs/go-ipld-format"
+	ipfspath "github.com/ipfs/go-path"
+	path "github.com/ipfs/interface-go-ipfs-core/path"
+	mh "github.com/multiformats/go-multihash"
 )
 
 var DagCmd = &cmds.Command{
-	Helptext: cmdkit.HelpText{
+	Helptext: cmds.HelpText{
 		Tagline: "Interact with ipld dag objects.",
 		ShortDescription: `
 'ipfs dag' is used for creating and manipulating dag objects.
@@ -39,47 +38,42 @@ to deprecate and replace the existing 'ipfs object' command moving forward.
 
 // OutputObject is the output type of 'dag put' command
 type OutputObject struct {
-	Cid *cid.Cid
+	Cid cid.Cid
 }
 
 // ResolveOutput is the output type of 'dag resolve' command
 type ResolveOutput struct {
-	Cid     *cid.Cid
+	Cid     cid.Cid
 	RemPath string
 }
 
 var DagPutCmd = &cmds.Command{
-	Helptext: cmdkit.HelpText{
+	Helptext: cmds.HelpText{
 		Tagline: "Add a dag node to ipfs.",
 		ShortDescription: `
 'ipfs dag put' accepts input from a file or stdin and parses it
 into an object of the specified format.
 `,
 	},
-	Arguments: []cmdkit.Argument{
-		cmdkit.FileArg("object data", true, true, "The object to put").EnableStdin(),
+	Arguments: []cmds.Argument{
+		cmds.FileArg("object data", true, true, "The object to put").EnableStdin(),
 	},
-	Options: []cmdkit.Option{
-		cmdkit.StringOption("format", "f", "Format that the object will be added as.").WithDefault("cbor"),
-		cmdkit.StringOption("input-enc", "Format that the input object will be.").WithDefault("json"),
-		cmdkit.BoolOption("pin", "Pin this object when adding."),
-		cmdkit.StringOption("hash", "Hash function to use").WithDefault(""),
+	Options: []cmds.Option{
+		cmds.StringOption("format", "f", "Format that the object will be added as.").WithDefault("cbor"),
+		cmds.StringOption("input-enc", "Format that the input object will be.").WithDefault("json"),
+		cmds.BoolOption("pin", "Pin this object when adding."),
+		cmds.StringOption("hash", "Hash function to use").WithDefault(""),
 	},
-	Run: func(req cmds.Request, res cmds.Response) {
-		n, err := req.InvocContext().GetNode()
+	Run: func(req *cmds.Request, res cmds.ResponseEmitter, env cmds.Environment) error {
+		api, err := cmdenv.GetApi(env, req)
 		if err != nil {
-			res.SetError(err, cmdkit.ErrNormal)
-			return
+			return err
 		}
 
-		ienc, _, _ := req.Option("input-enc").String()
-		format, _, _ := req.Option("format").String()
-		hash, _, err := req.Option("hash").String()
-		dopin, _, err := req.Option("pin").Bool()
-		if err != nil {
-			res.SetError(err, cmdkit.ErrNormal)
-			return
-		}
+		ienc, _ := req.Options["input-enc"].(string)
+		format, _ := req.Options["format"].(string)
+		hash, _ := req.Options["hash"].(string)
+		dopin, _ := req.Options["pin"].(bool)
 
 		// mhType tells inputParser which hash should be used. MaxUint64 means 'use
 		// default hash' (sha256 for cbor, sha1 for git..)
@@ -89,216 +83,161 @@ into an object of the specified format.
 			var ok bool
 			mhType, ok = mh.Names[hash]
 			if !ok {
-				res.SetError(fmt.Errorf("%s in not a valid multihash name", hash), cmdkit.ErrNormal)
-
-				return
+				return fmt.Errorf("%s in not a valid multihash name", hash)
 			}
 		}
 
-		outChan := make(chan interface{}, 8)
-		res.SetOutput((<-chan interface{})(outChan))
+		var adder ipld.NodeAdder = api.Dag()
+		if dopin {
+			adder = api.Dag().Pinning()
+		}
+		b := ipld.NewBatch(req.Context, adder)
 
-		addAllAndPin := func(f files.File) error {
-			cids := cid.NewSet()
-			b := ipld.NewBatch(req.Context(), n.DAG)
-
-			for {
-				file, err := f.NextFile()
-				if err == io.EOF {
-					// Finished the list of files.
-					break
-				} else if err != nil {
-					return err
-				}
-
-				nds, err := coredag.ParseInputs(ienc, format, file, mhType, -1)
-				if err != nil {
-					return err
-				}
-				if len(nds) == 0 {
-					return fmt.Errorf("no node returned from ParseInputs")
-				}
-
-				for _, nd := range nds {
-					err := b.Add(nd)
-					if err != nil {
-						return err
-					}
-				}
-
-				cid := nds[0].Cid()
-				cids.Add(cid)
-
-				select {
-				case outChan <- &OutputObject{Cid: cid}:
-				case <-req.Context().Done():
-					return nil
-				}
+		it := req.Files.Entries()
+		for it.Next() {
+			file := files.FileFromEntry(it)
+			if file == nil {
+				return fmt.Errorf("expected a regular file")
 			}
-
-			if err := b.Commit(); err != nil {
+			nds, err := coredag.ParseInputs(ienc, format, file, mhType, -1)
+			if err != nil {
 				return err
 			}
+			if len(nds) == 0 {
+				return fmt.Errorf("no node returned from ParseInputs")
+			}
 
-			if dopin {
-				defer n.Blockstore.PinLock().Unlock()
-
-				cids.ForEach(func(c *cid.Cid) error {
-					n.Pinning.PinWithMode(c, pin.Recursive)
-					return nil
-				})
-
-				err := n.Pinning.Flush()
+			for _, nd := range nds {
+				err := b.Add(req.Context, nd)
 				if err != nil {
 					return err
 				}
 			}
 
-			return nil
+			cid := nds[0].Cid()
+			if err := res.Emit(&OutputObject{Cid: cid}); err != nil {
+				return err
+			}
+		}
+		if it.Err() != nil {
+			return it.Err()
 		}
 
-		go func() {
-			defer close(outChan)
-			if err := addAllAndPin(req.Files()); err != nil {
-				res.SetError(err, cmdkit.ErrNormal)
-				return
-			}
-		}()
+		if err := b.Commit(); err != nil {
+			return err
+		}
+
+		return nil
 	},
 	Type: OutputObject{},
-	Marshalers: cmds.MarshalerMap{
-		cmds.Text: func(res cmds.Response) (io.Reader, error) {
-			v, err := unwrapOutput(res.Output())
+	Encoders: cmds.EncoderMap{
+		cmds.Text: cmds.MakeTypedEncoder(func(req *cmds.Request, w io.Writer, out *OutputObject) error {
+			enc, err := cmdenv.GetLowLevelCidEncoder(req)
 			if err != nil {
-				return nil, err
+				return err
 			}
-
-			oobj, ok := v.(*OutputObject)
-			if !ok {
-				return nil, e.TypeErr(oobj, v)
-			}
-
-			return strings.NewReader(oobj.Cid.String() + "\n"), nil
-		},
+			fmt.Fprintln(w, enc.Encode(out.Cid))
+			return nil
+		}),
 	},
 }
 
 var DagGetCmd = &cmds.Command{
-	Helptext: cmdkit.HelpText{
+	Helptext: cmds.HelpText{
 		Tagline: "Get a dag node from ipfs.",
 		ShortDescription: `
 'ipfs dag get' fetches a dag node from ipfs and prints it out in the specified
 format.
 `,
 	},
-	Arguments: []cmdkit.Argument{
-		cmdkit.StringArg("ref", true, false, "The object to get").EnableStdin(),
+	Arguments: []cmds.Argument{
+		cmds.StringArg("ref", true, false, "The object to get").EnableStdin(),
 	},
-	Run: func(req cmds.Request, res cmds.Response) {
-		n, err := req.InvocContext().GetNode()
+	Run: func(req *cmds.Request, res cmds.ResponseEmitter, env cmds.Environment) error {
+		api, err := cmdenv.GetApi(env, req)
 		if err != nil {
-			res.SetError(err, cmdkit.ErrNormal)
-			return
+			return err
 		}
 
-		p, err := path.ParsePath(req.Arguments()[0])
+		rp, err := api.ResolvePath(req.Context, path.New(req.Arguments[0]))
 		if err != nil {
-			res.SetError(err, cmdkit.ErrNormal)
-			return
+			return err
 		}
 
-		lastCid, rem, err := n.Resolver.ResolveToLastNode(req.Context(), p)
+		obj, err := api.Dag().Get(req.Context, rp.Cid())
 		if err != nil {
-			res.SetError(err, cmdkit.ErrNormal)
-			return
-		}
-		obj, err := n.DAG.Get(req.Context(), lastCid)
-		if err != nil {
-			res.SetError(err, cmdkit.ErrNormal)
-			return
+			return err
 		}
 
 		var out interface{} = obj
-		if len(rem) > 0 {
+		if len(rp.Remainder()) > 0 {
+			rem := strings.Split(rp.Remainder(), "/")
 			final, _, err := obj.Resolve(rem)
 			if err != nil {
-				res.SetError(err, cmdkit.ErrNormal)
-				return
+				return err
 			}
 			out = final
 		}
-
-		res.SetOutput(out)
+		return cmds.EmitOnce(res, &out)
 	},
 }
 
 // DagResolveCmd returns address of highest block within a path and a path remainder
 var DagResolveCmd = &cmds.Command{
-	Helptext: cmdkit.HelpText{
+	Helptext: cmds.HelpText{
 		Tagline: "Resolve ipld block",
 		ShortDescription: `
 'ipfs dag resolve' fetches a dag node from ipfs, prints it's address and remaining path.
 `,
 	},
-	Arguments: []cmdkit.Argument{
-		cmdkit.StringArg("ref", true, false, "The path to resolve").EnableStdin(),
+	Arguments: []cmds.Argument{
+		cmds.StringArg("ref", true, false, "The path to resolve").EnableStdin(),
 	},
-	Run: func(req cmds.Request, res cmds.Response) {
-		n, err := req.InvocContext().GetNode()
+	Run: func(req *cmds.Request, res cmds.ResponseEmitter, env cmds.Environment) error {
+		api, err := cmdenv.GetApi(env, req)
 		if err != nil {
-			res.SetError(err, cmdkit.ErrNormal)
-			return
+			return err
 		}
 
-		p, err := path.ParsePath(req.Arguments()[0])
+		rp, err := api.ResolvePath(req.Context, path.New(req.Arguments[0]))
 		if err != nil {
-			res.SetError(err, cmdkit.ErrNormal)
-			return
+			return err
 		}
 
-		lastCid, rem, err := n.Resolver.ResolveToLastNode(req.Context(), p)
-		if err != nil {
-			res.SetError(err, cmdkit.ErrNormal)
-			return
-		}
-
-		res.SetOutput(&ResolveOutput{
-			Cid:     lastCid,
-			RemPath: path.Join(rem),
+		return cmds.EmitOnce(res, &ResolveOutput{
+			Cid:     rp.Cid(),
+			RemPath: rp.Remainder(),
 		})
 	},
-	Marshalers: cmds.MarshalerMap{
-		cmds.Text: func(res cmds.Response) (io.Reader, error) {
-			v, err := unwrapOutput(res.Output())
-			if err != nil {
-				return nil, err
+	Encoders: cmds.EncoderMap{
+		cmds.Text: cmds.MakeTypedEncoder(func(req *cmds.Request, w io.Writer, out *ResolveOutput) error {
+			var (
+				enc cidenc.Encoder
+				err error
+			)
+			switch {
+			case !cmdenv.CidBaseDefined(req):
+				// Not specified, check the path.
+				enc, err = cmdenv.CidEncoderFromPath(req.Arguments[0])
+				if err == nil {
+					break
+				}
+				// Nope, fallback on the default.
+				fallthrough
+			default:
+				enc, err = cmdenv.GetLowLevelCidEncoder(req)
+				if err != nil {
+					return err
+				}
+			}
+			p := enc.Encode(out.Cid)
+			if out.RemPath != "" {
+				p = ipfspath.Join([]string{p, out.RemPath})
 			}
 
-			output := v.(*ResolveOutput)
-			buf := new(bytes.Buffer)
-			p := output.Cid.String()
-			if output.RemPath != "" {
-				p = path.Join([]string{p, output.RemPath})
-			}
-
-			buf.WriteString(p)
-
-			return buf, nil
-		},
+			fmt.Fprint(w, p)
+			return nil
+		}),
 	},
 	Type: ResolveOutput{},
-}
-
-// copy+pasted from ../commands.go
-func unwrapOutput(i interface{}) (interface{}, error) {
-	var (
-		ch <-chan interface{}
-		ok bool
-	)
-
-	if ch, ok = i.(<-chan interface{}); !ok {
-		return nil, e.TypeErr(ch, i)
-	}
-
-	return <-ch, nil
 }

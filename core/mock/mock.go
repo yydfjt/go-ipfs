@@ -3,19 +3,23 @@ package coremock
 import (
 	"context"
 
-	commands "github.com/ipfs/go-ipfs/commands"
-	core "github.com/ipfs/go-ipfs/core"
+	libp2p2 "github.com/ipfs/go-ipfs/core/node/libp2p"
+
+	"github.com/ipfs/go-ipfs/commands"
+	"github.com/ipfs/go-ipfs/core"
 	"github.com/ipfs/go-ipfs/repo"
 
-	peer "gx/ipfs/QmQsErDt8Qgw1XrsXf2BpEzDgGWtB1YLsTAARBup5b6B9W/go-libp2p-peer"
-	testutil "gx/ipfs/QmRNhSdqzMcuRxX9A1egBeQ3BhDTguDV5HPwi8wRykkPU8/go-testutil"
-	datastore "gx/ipfs/QmVG5gxteQNEMhrS8prJSmU2C9rebtFuTd3SYZ5kE3YZ5k/go-datastore"
-	syncds "gx/ipfs/QmVG5gxteQNEMhrS8prJSmU2C9rebtFuTd3SYZ5kE3YZ5k/go-datastore/sync"
-	config "gx/ipfs/QmXUU23sGKdT7AHpyJ4aSvYpXbWjbiuYG1CYhZ3ai3btkG/go-ipfs-config"
-	pstore "gx/ipfs/QmeKD8YT7887Xu6Z86iZmpYNxrLogJexqxEugSmaf14k64/go-libp2p-peerstore"
-	libp2p "gx/ipfs/Qmf1u2efhjXYtuyP8SMHYtw4dCkbghnniex2PSp7baA7FP/go-libp2p"
-	mocknet "gx/ipfs/Qmf1u2efhjXYtuyP8SMHYtw4dCkbghnniex2PSp7baA7FP/go-libp2p/p2p/net/mock"
-	host "gx/ipfs/QmfH9FKYv3Jp1xiyL8sPchGBUBg6JA6XviwajAo3qgnT3B/go-libp2p-host"
+	"github.com/ipfs/go-datastore"
+	syncds "github.com/ipfs/go-datastore/sync"
+	config "github.com/ipfs/go-ipfs-config"
+
+	"github.com/libp2p/go-libp2p"
+	host "github.com/libp2p/go-libp2p-core/host"
+	peer "github.com/libp2p/go-libp2p-core/peer"
+	pstore "github.com/libp2p/go-libp2p-core/peerstore"
+	testutil "github.com/libp2p/go-libp2p-testing/net"
+
+	mocknet "github.com/libp2p/go-libp2p/p2p/net/mock"
 )
 
 // NewMockNode constructs an IpfsNode for use in tests.
@@ -29,7 +33,7 @@ func NewMockNode() (*core.IpfsNode, error) {
 	})
 }
 
-func MockHostOption(mn mocknet.Mocknet) core.HostOption {
+func MockHostOption(mn mocknet.Mocknet) libp2p2.HostOption {
 	return func(ctx context.Context, id peer.ID, ps pstore.Peerstore, _ ...libp2p.Option) (host.Host, error) {
 		return mn.AddPeerWithPeerstore(id, ps)
 	}
@@ -62,7 +66,6 @@ func MockCmdsCtx() (commands.Context, error) {
 	}
 
 	return commands.Context{
-		Online:     true,
 		ConfigRoot: "/tmp/.mockipfsconfig",
 		LoadConfig: func(path string) (*config.Config, error) {
 			return &conf, nil

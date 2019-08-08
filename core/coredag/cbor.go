@@ -4,12 +4,12 @@ import (
 	"io"
 	"io/ioutil"
 
-	ipld "gx/ipfs/QmX5CsuHyVZeTLxgRSYkgLSDQKb9UjE8xnhQzCEJWWWFsC/go-ipld-format"
-	ipldcbor "gx/ipfs/QmepvyyduWnXHm1G7ybmGbJfQQHTAo36DjP2nvF7H7ZXjE/go-ipld-cbor"
+	ipldcbor "github.com/ipfs/go-ipld-cbor"
+	ipld "github.com/ipfs/go-ipld-format"
 )
 
 func cborJSONParser(r io.Reader, mhType uint64, mhLen int) ([]ipld.Node, error) {
-	nd, err := ipldcbor.FromJson(r, mhType, mhLen)
+	nd, err := ipldcbor.FromJSON(r, mhType, mhLen)
 	if err != nil {
 		return nil, err
 	}

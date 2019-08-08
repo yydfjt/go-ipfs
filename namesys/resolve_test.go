@@ -6,14 +6,15 @@ import (
 	"testing"
 	"time"
 
-	path "gx/ipfs/QmTKaiDxQqVxmA1bRipSuP7hnTSgnMSmEa98NYeS6fcoiv/go-path"
-
-	ipns "gx/ipfs/QmNqBhXpBKa5jcjoUZHfxDgAFxtqK3rDA5jtW811GBvVob/go-ipns"
-	peer "gx/ipfs/QmQsErDt8Qgw1XrsXf2BpEzDgGWtB1YLsTAARBup5b6B9W/go-libp2p-peer"
-	testutil "gx/ipfs/QmRNhSdqzMcuRxX9A1egBeQ3BhDTguDV5HPwi8wRykkPU8/go-testutil"
-	ds "gx/ipfs/QmVG5gxteQNEMhrS8prJSmU2C9rebtFuTd3SYZ5kE3YZ5k/go-datastore"
-	dssync "gx/ipfs/QmVG5gxteQNEMhrS8prJSmU2C9rebtFuTd3SYZ5kE3YZ5k/go-datastore/sync"
-	mockrouting "gx/ipfs/QmZdn8S4FLTfDrmLZb7JoLkrRvTYnyuMWEG6ZGZ3YKwEiK/go-ipfs-routing/mock"
+	ds "github.com/ipfs/go-datastore"
+	dssync "github.com/ipfs/go-datastore/sync"
+	mockrouting "github.com/ipfs/go-ipfs-routing/mock"
+	ipns "github.com/ipfs/go-ipns"
+	path "github.com/ipfs/go-path"
+	ci "github.com/libp2p/go-libp2p-core/crypto"
+	peer "github.com/libp2p/go-libp2p-core/peer"
+	test "github.com/libp2p/go-libp2p-core/test"
+	testutil "github.com/libp2p/go-libp2p-testing/net"
 )
 
 func TestRoutingResolve(t *testing.T) {
@@ -25,7 +26,7 @@ func TestRoutingResolve(t *testing.T) {
 	resolver := NewIpnsResolver(d)
 	publisher := NewIpnsPublisher(d, dstore)
 
-	privk, pubk, err := testutil.RandTestKeyPair(512)
+	privk, pubk, err := test.RandTestKeyPair(ci.RSA, 512)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -58,7 +59,7 @@ func TestPrexistingExpiredRecord(t *testing.T) {
 	resolver := NewIpnsResolver(d)
 	publisher := NewIpnsPublisher(d, dstore)
 
-	privk, pubk, err := testutil.RandTestKeyPair(512)
+	privk, pubk, err := test.RandTestKeyPair(ci.RSA, 512)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -100,7 +101,7 @@ func TestPrexistingRecord(t *testing.T) {
 	resolver := NewIpnsResolver(d)
 	publisher := NewIpnsPublisher(d, dstore)
 
-	privk, pubk, err := testutil.RandTestKeyPair(512)
+	privk, pubk, err := test.RandTestKeyPair(ci.RSA, 512)
 	if err != nil {
 		t.Fatal(err)
 	}

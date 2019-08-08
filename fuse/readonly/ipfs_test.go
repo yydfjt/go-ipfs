@@ -1,30 +1,37 @@
-// +build !nofuse
+// +build !nofuse,!openbsd,!netbsd
 
 package readonly
 
 import (
 	"bytes"
+	"context"
 	"errors"
 	"fmt"
+	"io"
 	"io/ioutil"
 	"math/rand"
 	"os"
 	"path"
+	"strings"
 	"sync"
 	"testing"
 
-	core "github.com/ipfs/go-ipfs/core"
-	coreunix "github.com/ipfs/go-ipfs/core/coreunix"
-	coremock "github.com/ipfs/go-ipfs/core/mock"
-	dag "gx/ipfs/QmRDaC5z6yXkXTTSWzaxs2sSVBon5RRCN6eNtMmpuHtKCr/go-merkledag"
-	importer "gx/ipfs/QmVNEJ5Vk1e2G5kHMiuVbpD6VQZiK1oS6aWZKjcUQW7hEy/go-unixfs/importer"
-	uio "gx/ipfs/QmVNEJ5Vk1e2G5kHMiuVbpD6VQZiK1oS6aWZKjcUQW7hEy/go-unixfs/io"
+	"bazil.org/fuse"
 
-	u "gx/ipfs/QmPdKqUcHGFdeSpvjVoaTRPPstGif9GBZb5Q56RVw9o69A/go-ipfs-util"
-	ci "gx/ipfs/QmRNhSdqzMcuRxX9A1egBeQ3BhDTguDV5HPwi8wRykkPU8/go-testutil/ci"
-	fstest "gx/ipfs/QmSJBsmLP1XMjv8hxYg2rUMdPDB7YUpyBo9idjrJ6Cmq6F/fuse/fs/fstestutil"
-	ipld "gx/ipfs/QmX5CsuHyVZeTLxgRSYkgLSDQKb9UjE8xnhQzCEJWWWFsC/go-ipld-format"
-	chunker "gx/ipfs/QmXzBbJo2sLf3uwjNTeoWYiJV7CjAhkiA4twtLvwJSSNdK/go-ipfs-chunker"
+	core "github.com/ipfs/go-ipfs/core"
+	coreapi "github.com/ipfs/go-ipfs/core/coreapi"
+	coremock "github.com/ipfs/go-ipfs/core/mock"
+
+	fstest "bazil.org/fuse/fs/fstestutil"
+	chunker "github.com/ipfs/go-ipfs-chunker"
+	files "github.com/ipfs/go-ipfs-files"
+	u "github.com/ipfs/go-ipfs-util"
+	ipld "github.com/ipfs/go-ipld-format"
+	dag "github.com/ipfs/go-merkledag"
+	importer "github.com/ipfs/go-unixfs/importer"
+	uio "github.com/ipfs/go-unixfs/io"
+	ipath "github.com/ipfs/interface-go-ipfs-core/path"
+	ci "github.com/libp2p/go-libp2p-testing/ci"
 )
 
 func maybeSkipFuseTests(t *testing.T) {
@@ -35,7 +42,10 @@ func maybeSkipFuseTests(t *testing.T) {
 
 func randObj(t *testing.T, nd *core.IpfsNode, size int64) (ipld.Node, []byte) {
 	buf := make([]byte, size)
-	u.NewTimeSeededRand().Read(buf)
+	_, err := io.ReadFull(u.NewTimeSeededRand(), buf)
+	if err != nil {
+		t.Fatal(err)
+	}
 	read := bytes.NewReader(buf)
 	obj, err := importer.BuildTrickleDagFromReader(nd.DAG, chunker.DefaultSplitter(read))
 	if err != nil {
@@ -46,6 +56,7 @@ func randObj(t *testing.T, nd *core.IpfsNode, size int64) (ipld.Node, []byte) {
 }
 
 func setupIpfsTest(t *testing.T, node *core.IpfsNode) (*core.IpfsNode, *fstest.Mount) {
+	t.Helper()
 	maybeSkipFuseTests(t)
 
 	var err error
@@ -58,8 +69,11 @@ func setupIpfsTest(t *testing.T, node *core.IpfsNode) (*core.IpfsNode, *fstest.M
 
 	fs := NewFileSystem(node)
 	mnt, err := fstest.MountedT(t, fs, nil)
+	if err == fuse.ErrOSXFUSENotFound {
+		t.Skip(err)
+	}
 	if err != nil {
-		t.Fatal(err)
+		t.Fatalf("error mounting temporary directory: %v", err)
 	}
 
 	return node, mnt
@@ -116,6 +130,11 @@ func TestIpfsStressRead(t *testing.T) {
 	nd, mnt := setupIpfsTest(t, nil)
 	defer mnt.Close()
 
+	api, err := coreapi.NewCoreAPI(nd)
+	if err != nil {
+		t.Fatal(err)
+	}
+
 	var nodes []ipld.Node
 	var paths []string
 
@@ -165,22 +184,31 @@ func TestIpfsStressRead(t *testing.T) {
 			defer wg.Done()
 
 			for i := 0; i < 2000; i++ {
-				item := paths[rand.Intn(len(paths))]
-				fname := path.Join(mnt.Dir, item)
+				item := ipath.New(paths[rand.Intn(len(paths))])
+
+				relpath := strings.Replace(item.String(), item.Namespace(), "", 1)
+				fname := path.Join(mnt.Dir, relpath)
+
 				rbuf, err := ioutil.ReadFile(fname)
 				if err != nil {
 					errs <- err
 				}
 
-				read, err := coreunix.Cat(nd.Context(), nd, item)
+				//nd.Context() is never closed which leads to
+				//hitting 8128 goroutine limit in go test -race mode
+				ctx, cancelFunc := context.WithCancel(context.Background())
+
+				read, err := api.Unixfs().Get(ctx, item)
 				if err != nil {
 					errs <- err
 				}
 
-				data, err := ioutil.ReadAll(read)
+				data, err := ioutil.ReadAll(read.(files.File))
 				if err != nil {
 					errs <- err
 				}
+
+				cancelFunc()
 
 				if !bytes.Equal(rbuf, data) {
 					errs <- errors.New("incorrect read")

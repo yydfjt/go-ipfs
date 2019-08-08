@@ -8,8 +8,8 @@ import (
 	"os"
 	"strconv"
 
-	manet "gx/ipfs/QmV6FjemM1K8oXjrvuq3wuVWWoU2TLDPmNnKrxHzY3v6Ai/go-multiaddr-net"
-	ma "gx/ipfs/QmYmsdtJ3HsodkePE3eU3TsCaP2YvPZJ4LoXnNkDE5Tpt7/go-multiaddr"
+	ma "github.com/multiformats/go-multiaddr"
+	manet "github.com/multiformats/go-multiaddr-net"
 )
 
 const USAGE = "ma-pipe-unidir [-l|--listen] [--pidFile=path] [-h|--help] <send|recv> <multiaddr>\n"
@@ -81,10 +81,13 @@ func app() int {
 	defer conn.Close()
 	switch mode {
 	case "recv":
-		io.Copy(os.Stdout, conn)
+		_, err = io.Copy(os.Stdout, conn)
 	case "send":
-		io.Copy(conn, os.Stdin)
+		_, err = io.Copy(conn, os.Stdin)
 	default:
+		return 1
+	}
+	if err != nil {
 		return 1
 	}
 	return 0

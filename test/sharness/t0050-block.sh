@@ -11,6 +11,7 @@ test_description="Test block command"
 test_init_ipfs
 
 HASH="QmRKqGMAM6EZngbpjSqrvYzq5Qd8b1bSWymjSUY9zQSNDk"
+HASHB="QmdnpnsaEj69isdw5sNzp3h3HkaDz7xKq7BmvFFBzNr5e7"
 
 #
 # "block put tests"
@@ -23,6 +24,18 @@ test_expect_success "'ipfs block put' succeeds" '
 
 test_expect_success "'ipfs block put' output looks good" '
   echo "$HASH" >expected_out &&
+  test_cmp expected_out actual_out
+'
+
+test_expect_success "'ipfs block put' with 2 files succeeds" '
+  echo "Hello Mars!" > a &&
+  echo "Hello Venus!" > b &&
+  ipfs block put a b >actual_out
+'
+
+test_expect_success "'ipfs block put' output looks good" '
+  echo "$HASH" >expected_out &&
+  echo "$HASHB" >>expected_out &&
   test_cmp expected_out actual_out
 '
 
@@ -69,12 +82,15 @@ test_expect_success "'ipfs block rm' block actually removed" '
   test_must_fail ipfs block stat $HASH
 '
 
+RANDOMHASH=QmRKqGMAM6EbngbZjSqrvYzq5Qd8b1bSWymjSUY9zQSNDq
 DIRHASH=QmdWmVmM6W2abTgkEfpbtA1CJyTWS2rhuUB9uP1xV8Uwtf
 FILE1HASH=Qmae3RedM7SNkWGsdzYzsr6svmsFdsva4WoTvYYsWhUSVz
 FILE2HASH=QmUtkGLvPf63NwVzLPKPUYgwhn8ZYPWF6vKWN3fZ2amfJF
 FILE3HASH=Qmesmmf1EEG1orJb6XdK6DabxexsseJnCfw8pqWgonbkoj
+TESTHASH=QmeomffUNfmQy76CQGy9NdmqEnnHU9soCexBnGU3ezPHVH
 
 test_expect_success "add and pin directory" '
+  echo "test" | ipfs add --pin=false &&
   mkdir adir &&
   echo "file1" > adir/file1 &&
   echo "file2" > adir/file2 &&
@@ -113,6 +129,18 @@ test_expect_success "multi-block 'ipfs block rm' output looks good" '
   grep -F -q "removed $FILE3HASH" actual_rm
 '
 
+test_expect_success "multi-block 'ipfs block rm <invalid> <valid> <invalid>'" '
+  test_must_fail ipfs block rm $RANDOMHASH $TESTHASH $RANDOMHASH &> actual_mixed_rm
+'
+
+test_expect_success "multi-block 'ipfs block rm <invalid> <valid> <invalid>' output looks good" '
+  echo "cannot remove $RANDOMHASH: blockstore: block not found" >> expect_mixed_rm &&
+  echo "removed $TESTHASH" >> expect_mixed_rm &&
+  echo "cannot remove $RANDOMHASH: blockstore: block not found" >> expect_mixed_rm &&
+  echo "Error: some blocks not removed" >> expect_mixed_rm
+  test_cmp actual_mixed_rm expect_mixed_rm
+'
+
 test_expect_success "'add some blocks' succeeds" '
   echo "Hello Mars!" | ipfs block put &&
   echo "Hello Venus!" | ipfs block put
@@ -125,7 +153,6 @@ test_expect_success "add and pin directory" '
 
 HASH=QmRKqGMAM6EZngbpjSqrvYzq5Qd8b1bSWymjSUY9zQSNDk
 HASH2=QmdnpnsaEj69isdw5sNzp3h3HkaDz7xKq7BmvFFBzNr5e7
-RANDOMHASH=QmRKqGMAM6EbngbZjSqrvYzq5Qd8b1bSWymjSUY9zQSNDq
 
 test_expect_success "multi-block 'ipfs block rm' mixed" '
   test_must_fail ipfs block rm $FILE1HASH $DIRHASH $HASH $FILE3HASH $RANDOMHASH $HASH2 2> block_rm_err
@@ -189,7 +216,7 @@ test_expect_success "can set multihash type and length on block put" '
 '
 
 test_expect_success "output looks good" '
-  test "z83bYcqyBkbx5fuNAcvbdv4pr5RYQiEpK" = "$HASH"
+  test "bafkrifctrq4xazzixy2v4ezymjcvzpskqdwlxra" = "$HASH"
 '
 
 test_expect_success "can read block with different hash" '
@@ -214,7 +241,7 @@ test_expect_success "can set multihash type and length on block put without form
 '
 
 test_expect_success "output looks good" '
-  test "z8bwYCvQPhyDY7VUTsUdGdE8Evm1ktSPV" = "$HASH"
+  test "bafybifctrq4xazzixy2v4ezymjcvzpskqdwlxra" = "$HASH"
 '
 
 test_expect_success "put with sha3 and cidv0 fails" '

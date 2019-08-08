@@ -1,23 +1,17 @@
 package unixfs
 
 import (
-	"bytes"
 	"fmt"
 	"io"
 	"sort"
 	"text/tabwriter"
 
-	cmdkit "gx/ipfs/QmSP88ryZkHSRn1fnngAaV2Vcn63WUJzAavnRM9CVdU1Ky/go-ipfs-cmdkit"
+	cmdenv "github.com/ipfs/go-ipfs/core/commands/cmdenv"
 
-	cmds "github.com/ipfs/go-ipfs/commands"
-	core "github.com/ipfs/go-ipfs/core"
-	e "github.com/ipfs/go-ipfs/core/commands/e"
-	merkledag "gx/ipfs/QmRDaC5z6yXkXTTSWzaxs2sSVBon5RRCN6eNtMmpuHtKCr/go-merkledag"
-	path "gx/ipfs/QmTKaiDxQqVxmA1bRipSuP7hnTSgnMSmEa98NYeS6fcoiv/go-path"
-	resolver "gx/ipfs/QmTKaiDxQqVxmA1bRipSuP7hnTSgnMSmEa98NYeS6fcoiv/go-path/resolver"
-	unixfs "gx/ipfs/QmVNEJ5Vk1e2G5kHMiuVbpD6VQZiK1oS6aWZKjcUQW7hEy/go-unixfs"
-	uio "gx/ipfs/QmVNEJ5Vk1e2G5kHMiuVbpD6VQZiK1oS6aWZKjcUQW7hEy/go-unixfs/io"
-	unixfspb "gx/ipfs/QmVNEJ5Vk1e2G5kHMiuVbpD6VQZiK1oS6aWZKjcUQW7hEy/go-unixfs/pb"
+	cmds "github.com/ipfs/go-ipfs-cmds"
+	merkledag "github.com/ipfs/go-merkledag"
+	unixfs "github.com/ipfs/go-unixfs"
+	path "github.com/ipfs/interface-go-ipfs-core/path"
 )
 
 type LsLink struct {
@@ -39,7 +33,7 @@ type LsOutput struct {
 }
 
 var LsCmd = &cmds.Command{
-	Helptext: cmdkit.HelpText{
+	Helptext: cmds.HelpText{
 		Tagline: "List directory contents for Unix filesystem objects.",
 		ShortDescription: `
 Displays the contents of an IPFS or IPNS object(s) at the given path.
@@ -73,41 +67,43 @@ possible, please use 'ipfs ls' instead.
 `,
 	},
 
-	Arguments: []cmdkit.Argument{
-		cmdkit.StringArg("ipfs-path", true, true, "The path to the IPFS object(s) to list links from.").EnableStdin(),
+	Arguments: []cmds.Argument{
+		cmds.StringArg("ipfs-path", true, true, "The path to the IPFS object(s) to list links from.").EnableStdin(),
 	},
-	Run: func(req cmds.Request, res cmds.Response) {
-		node, err := req.InvocContext().GetNode()
+	Run: func(req *cmds.Request, res cmds.ResponseEmitter, env cmds.Environment) error {
+		nd, err := cmdenv.GetNode(env)
 		if err != nil {
-			res.SetError(err, cmdkit.ErrNormal)
-			return
+			return err
 		}
 
-		paths := req.Arguments()
+		api, err := cmdenv.GetApi(env, req)
+		if err != nil {
+			return err
+		}
+
+		if err := req.ParseBodyArgs(); err != nil {
+			return err
+		}
+
+		paths := req.Arguments
 
 		output := LsOutput{
 			Arguments: map[string]string{},
 			Objects:   map[string]*LsObject{},
 		}
 
-		for _, fpath := range paths {
-			ctx := req.Context()
+		for _, p := range paths {
+			ctx := req.Context
 
-			resolver := &resolver.Resolver{
-				DAG:         node.DAG,
-				ResolveOnce: uio.ResolveUnixfsOnce,
-			}
-
-			merkleNode, err := core.Resolve(ctx, node.Namesys, resolver, path.Path(fpath))
+			merkleNode, err := api.ResolveNode(ctx, path.New(p))
 			if err != nil {
-				res.SetError(err, cmdkit.ErrNormal)
-				return
+				return err
 			}
 
 			c := merkleNode.Cid()
 
 			hash := c.String()
-			output.Arguments[fpath] = hash
+			output.Arguments[p] = hash
 
 			if _, ok := output.Objects[hash]; ok {
 				// duplicate argument for an already-listed node
@@ -116,95 +112,77 @@ possible, please use 'ipfs ls' instead.
 
 			ndpb, ok := merkleNode.(*merkledag.ProtoNode)
 			if !ok {
-				res.SetError(merkledag.ErrNotProtobuf, cmdkit.ErrNormal)
-				return
+				return merkledag.ErrNotProtobuf
 			}
 
-			unixFSNode, err := unixfs.FromBytes(ndpb.Data())
+			unixFSNode, err := unixfs.FSNodeFromBytes(ndpb.Data())
 			if err != nil {
-				res.SetError(err, cmdkit.ErrNormal)
-				return
+				return err
 			}
 
-			t := unixFSNode.GetType()
+			t := unixFSNode.Type()
 
 			output.Objects[hash] = &LsObject{
 				Hash: c.String(),
 				Type: t.String(),
-				Size: unixFSNode.GetFilesize(),
+				Size: unixFSNode.FileSize(),
 			}
 
 			switch t {
-			case unixfspb.Data_File:
+			case unixfs.TFile:
 				break
-			case unixfspb.Data_HAMTShard:
+			case unixfs.THAMTShard:
 				// We need a streaming ls API for this.
-				res.SetError(fmt.Errorf("cannot list large directories yet"), cmdkit.ErrNormal)
-				return
-			case unixfspb.Data_Directory:
+				return fmt.Errorf("cannot list large directories yet")
+			case unixfs.TDirectory:
 				links := make([]LsLink, len(merkleNode.Links()))
 				output.Objects[hash].Links = links
 				for i, link := range merkleNode.Links() {
-					linkNode, err := link.GetNode(ctx, node.DAG)
+					linkNode, err := link.GetNode(ctx, nd.DAG)
 					if err != nil {
-						res.SetError(err, cmdkit.ErrNormal)
-						return
+						return err
 					}
 					lnpb, ok := linkNode.(*merkledag.ProtoNode)
 					if !ok {
-						res.SetError(merkledag.ErrNotProtobuf, cmdkit.ErrNormal)
-						return
+						return merkledag.ErrNotProtobuf
 					}
 
-					d, err := unixfs.FromBytes(lnpb.Data())
+					d, err := unixfs.FSNodeFromBytes(lnpb.Data())
 					if err != nil {
-						res.SetError(err, cmdkit.ErrNormal)
-						return
+						return err
 					}
-					t := d.GetType()
+					t := d.Type()
 					lsLink := LsLink{
 						Name: link.Name,
 						Hash: link.Cid.String(),
 						Type: t.String(),
 					}
-					if t == unixfspb.Data_File {
-						lsLink.Size = d.GetFilesize()
+					if t == unixfs.TFile {
+						lsLink.Size = d.FileSize()
 					} else {
 						lsLink.Size = link.Size
 					}
 					links[i] = lsLink
 				}
-			case unixfspb.Data_Symlink:
-				res.SetError(fmt.Errorf("cannot list symlinks yet"), cmdkit.ErrNormal)
-				return
+			case unixfs.TSymlink:
+				return fmt.Errorf("cannot list symlinks yet")
 			default:
-				res.SetError(fmt.Errorf("unrecognized type: %s", t), cmdkit.ErrImplementation)
-				return
+				return fmt.Errorf("unrecognized type: %s", t)
 			}
 		}
 
-		res.SetOutput(&output)
+		return cmds.EmitOnce(res, &output)
 	},
-	Marshalers: cmds.MarshalerMap{
-		cmds.Text: func(res cmds.Response) (io.Reader, error) {
-			v, err := unwrapOutput(res.Output())
-			if err != nil {
-				return nil, err
-			}
-
-			output, ok := v.(*LsOutput)
-			if !ok {
-				return nil, e.TypeErr(output, v)
-			}
-			buf := new(bytes.Buffer)
-			w := tabwriter.NewWriter(buf, 1, 2, 1, ' ', 0)
+	Encoders: cmds.EncoderMap{
+		cmds.Text: cmds.MakeTypedEncoder(func(req *cmds.Request, w io.Writer, out *LsOutput) error {
+			tw := tabwriter.NewWriter(w, 1, 2, 1, ' ', 0)
 
 			nonDirectories := []string{}
 			directories := []string{}
-			for argument, hash := range output.Arguments {
-				object, ok := output.Objects[hash]
+			for argument, hash := range out.Arguments {
+				object, ok := out.Objects[hash]
 				if !ok {
-					return nil, fmt.Errorf("unresolved hash: %s", hash)
+					return fmt.Errorf("unresolved hash: %s", hash)
 				}
 
 				if object.Type == "Directory" {
@@ -217,36 +195,36 @@ possible, please use 'ipfs ls' instead.
 			sort.Strings(directories)
 
 			for _, argument := range nonDirectories {
-				fmt.Fprintf(w, "%s\n", argument)
+				fmt.Fprintf(tw, "%s\n", argument)
 			}
 
 			seen := map[string]bool{}
 			for i, argument := range directories {
-				hash := output.Arguments[argument]
+				hash := out.Arguments[argument]
 				if _, ok := seen[hash]; ok {
 					continue
 				}
 				seen[hash] = true
 
-				object := output.Objects[hash]
+				object := out.Objects[hash]
 				if i > 0 || len(nonDirectories) > 0 {
-					fmt.Fprintln(w)
+					fmt.Fprintln(tw)
 				}
-				if len(output.Arguments) > 1 {
+				if len(out.Arguments) > 1 {
 					for _, arg := range directories[i:] {
-						if output.Arguments[arg] == hash {
-							fmt.Fprintf(w, "%s:\n", arg)
+						if out.Arguments[arg] == hash {
+							fmt.Fprintf(tw, "%s:\n", arg)
 						}
 					}
 				}
 				for _, link := range object.Links {
-					fmt.Fprintf(w, "%s\n", link.Name)
+					fmt.Fprintf(tw, "%s\n", link.Name)
 				}
 			}
-			w.Flush()
+			tw.Flush()
 
-			return buf, nil
-		},
+			return nil
+		}),
 	},
 	Type: LsOutput{},
 }

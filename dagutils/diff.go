@@ -5,11 +5,10 @@ import (
 	"fmt"
 	"path"
 
-	coreiface "github.com/ipfs/go-ipfs/core/coreapi/interface"
-
-	dag "gx/ipfs/QmRDaC5z6yXkXTTSWzaxs2sSVBon5RRCN6eNtMmpuHtKCr/go-merkledag"
-	ipld "gx/ipfs/QmX5CsuHyVZeTLxgRSYkgLSDQKb9UjE8xnhQzCEJWWWFsC/go-ipld-format"
-	"gx/ipfs/QmZFbDTY9jfSBms2MchvYM9oYRbAF19K7Pby47yDBfpPrb/go-cid"
+	"github.com/ipfs/go-cid"
+	ipld "github.com/ipfs/go-ipld-format"
+	dag "github.com/ipfs/go-merkledag"
+	coreiface "github.com/ipfs/interface-go-ipfs-core"
 )
 
 // These constants define the changes that can be applied to a DAG.
@@ -24,8 +23,8 @@ const (
 type Change struct {
 	Type   coreiface.ChangeType
 	Path   string
-	Before *cid.Cid
-	After  *cid.Cid
+	Before cid.Cid
+	After  cid.Cid
 }
 
 // String prints a human-friendly line about a change.
@@ -94,26 +93,24 @@ func ApplyChange(ctx context.Context, ds ipld.DAGService, nd *dag.ProtoNode, cs 
 	return e.Finalize(ctx, ds)
 }
 
-// Diff returns a set of changes that transform node 'a' into node 'b'
+// Diff returns a set of changes that transform node 'a' into node 'b'.
+// It only traverses links in the following cases:
+// 1. two node's links number are greater than 0.
+// 2. both of two nodes are ProtoNode.
+// Otherwise, it compares the cid and emits a Mod change object.
 func Diff(ctx context.Context, ds ipld.DAGService, a, b ipld.Node) ([]*Change, error) {
 	// Base case where both nodes are leaves, just compare
 	// their CIDs.
 	if len(a.Links()) == 0 && len(b.Links()) == 0 {
-		if a.Cid().Equals(b.Cid()) {
-			return []*Change{}, nil
-		}
-		return []*Change{
-			&Change{
-				Type:   Mod,
-				Before: a.Cid(),
-				After:  b.Cid(),
-			},
-		}, nil
+		return getChange(a, b)
 	}
 
 	var out []*Change
-	cleanA := a.Copy().(*dag.ProtoNode)
-	cleanB := b.Copy().(*dag.ProtoNode)
+	cleanA, okA := a.Copy().(*dag.ProtoNode)
+	cleanB, okB := b.Copy().(*dag.ProtoNode)
+	if !okA || !okB {
+		return getChange(a, b)
+	}
 
 	// strip out unchanged stuff
 	for _, lnk := range a.Links() {
@@ -132,17 +129,7 @@ func Diff(ctx context.Context, ds ipld.DAGService, a, b ipld.Node) ([]*Change, e
 					return nil, err
 				}
 
-				anodepb, ok := anode.(*dag.ProtoNode)
-				if !ok {
-					return nil, dag.ErrNotProtobuf
-				}
-
-				bnodepb, ok := bnode.(*dag.ProtoNode)
-				if !ok {
-					return nil, dag.ErrNotProtobuf
-				}
-
-				sub, err := Diff(ctx, ds, anodepb, bnodepb)
+				sub, err := Diff(ctx, ds, anode, bnode)
 				if err != nil {
 					return nil, err
 				}
@@ -152,8 +139,8 @@ func Diff(ctx context.Context, ds ipld.DAGService, a, b ipld.Node) ([]*Change, e
 					out = append(out, subc)
 				}
 			}
-			cleanA.RemoveNodeLink(l.Name)
-			cleanB.RemoveNodeLink(l.Name)
+			_ = cleanA.RemoveNodeLink(l.Name)
+			_ = cleanB.RemoveNodeLink(l.Name)
 		}
 	}
 
@@ -208,4 +195,17 @@ func MergeDiffs(a, b []*Change) ([]*Change, []Conflict) {
 		out = append(out, c)
 	}
 	return out, conflicts
+}
+
+func getChange(a, b ipld.Node) ([]*Change, error) {
+	if a.Cid().Equals(b.Cid()) {
+		return []*Change{}, nil
+	}
+	return []*Change{
+		{
+			Type:   Mod,
+			Before: a.Cid(),
+			After:  b.Cid(),
+		},
+	}, nil
 }

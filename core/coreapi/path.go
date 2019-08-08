@@ -1,54 +1,49 @@
 package coreapi
 
 import (
-	context "context"
-	fmt "fmt"
+	"context"
+	"fmt"
 	gopath "path"
 
-	core "github.com/ipfs/go-ipfs/core"
-	coreiface "github.com/ipfs/go-ipfs/core/coreapi/interface"
-	namesys "github.com/ipfs/go-ipfs/namesys"
-	ipfspath "gx/ipfs/QmTKaiDxQqVxmA1bRipSuP7hnTSgnMSmEa98NYeS6fcoiv/go-path"
-	resolver "gx/ipfs/QmTKaiDxQqVxmA1bRipSuP7hnTSgnMSmEa98NYeS6fcoiv/go-path/resolver"
-	uio "gx/ipfs/QmVNEJ5Vk1e2G5kHMiuVbpD6VQZiK1oS6aWZKjcUQW7hEy/go-unixfs/io"
+	"github.com/ipfs/go-ipfs/namesys/resolve"
 
-	ipld "gx/ipfs/QmX5CsuHyVZeTLxgRSYkgLSDQKb9UjE8xnhQzCEJWWWFsC/go-ipld-format"
-	cid "gx/ipfs/QmZFbDTY9jfSBms2MchvYM9oYRbAF19K7Pby47yDBfpPrb/go-cid"
+	"github.com/ipfs/go-cid"
+	ipld "github.com/ipfs/go-ipld-format"
+	ipfspath "github.com/ipfs/go-path"
+	"github.com/ipfs/go-path/resolver"
+	uio "github.com/ipfs/go-unixfs/io"
+	coreiface "github.com/ipfs/interface-go-ipfs-core"
+	path "github.com/ipfs/interface-go-ipfs-core/path"
 )
 
 // ResolveNode resolves the path `p` using Unixfs resolver, gets and returns the
 // resolved Node.
-func (api *CoreAPI) ResolveNode(ctx context.Context, p coreiface.Path) (ipld.Node, error) {
-	return resolveNode(ctx, api.node.DAG, api.node.Namesys, p)
-}
-
-// ResolvePath resolves the path `p` using Unixfs resolver, returns the
-// resolved path.
-func (api *CoreAPI) ResolvePath(ctx context.Context, p coreiface.Path) (coreiface.ResolvedPath, error) {
-	return resolvePath(ctx, api.node.DAG, api.node.Namesys, p)
-}
-
-func resolveNode(ctx context.Context, ng ipld.NodeGetter, nsys namesys.NameSystem, p coreiface.Path) (ipld.Node, error) {
-	rp, err := resolvePath(ctx, ng, nsys, p)
+func (api *CoreAPI) ResolveNode(ctx context.Context, p path.Path) (ipld.Node, error) {
+	rp, err := api.ResolvePath(ctx, p)
 	if err != nil {
 		return nil, err
 	}
 
-	node, err := ng.Get(ctx, rp.Cid())
+	node, err := api.dag.Get(ctx, rp.Cid())
 	if err != nil {
 		return nil, err
 	}
 	return node, nil
 }
 
-func resolvePath(ctx context.Context, ng ipld.NodeGetter, nsys namesys.NameSystem, p coreiface.Path) (coreiface.ResolvedPath, error) {
-	if _, ok := p.(coreiface.ResolvedPath); ok {
-		return p.(coreiface.ResolvedPath), nil
+// ResolvePath resolves the path `p` using Unixfs resolver, returns the
+// resolved path.
+func (api *CoreAPI) ResolvePath(ctx context.Context, p path.Path) (path.Resolved, error) {
+	if _, ok := p.(path.Resolved); ok {
+		return p.(path.Resolved), nil
+	}
+	if err := p.IsValid(); err != nil {
+		return nil, err
 	}
 
 	ipath := ipfspath.Path(p.String())
-	ipath, err := core.ResolveIPNS(ctx, nsys, ipath)
-	if err == core.ErrNoNamesys {
+	ipath, err := resolve.ResolveIPNS(ctx, api.namesys, ipath)
+	if err == resolve.ErrNoNamesys {
 		return nil, coreiface.ErrOffline
 	} else if err != nil {
 		return nil, err
@@ -66,7 +61,7 @@ func resolvePath(ctx context.Context, ng ipld.NodeGetter, nsys namesys.NameSyste
 	}
 
 	r := &resolver.Resolver{
-		DAG:         ng,
+		DAG:         api.dag,
 		ResolveOnce: resolveOnce,
 	}
 
@@ -80,5 +75,5 @@ func resolvePath(ctx context.Context, ng ipld.NodeGetter, nsys namesys.NameSyste
 		return nil, err
 	}
 
-	return coreiface.NewResolvedPath(ipath, node, root, gopath.Join(rest...)), nil
+	return path.NewResolvedPath(ipath, node, root, gopath.Join(rest...)), nil
 }

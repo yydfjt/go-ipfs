@@ -1,4 +1,4 @@
-// +build !nofuse
+// +build !nofuse,!openbsd,!netbsd
 
 // package fuse/ipns implements a fuse filesystem that interfaces
 // with ipns, the naming system for ipfs.
@@ -13,17 +13,19 @@ import (
 
 	core "github.com/ipfs/go-ipfs/core"
 	namesys "github.com/ipfs/go-ipfs/namesys"
-	dag "gx/ipfs/QmRDaC5z6yXkXTTSWzaxs2sSVBon5RRCN6eNtMmpuHtKCr/go-merkledag"
-	path "gx/ipfs/QmTKaiDxQqVxmA1bRipSuP7hnTSgnMSmEa98NYeS6fcoiv/go-path"
-	ft "gx/ipfs/QmVNEJ5Vk1e2G5kHMiuVbpD6VQZiK1oS6aWZKjcUQW7hEy/go-unixfs"
+	resolve "github.com/ipfs/go-ipfs/namesys/resolve"
 
-	mfs "gx/ipfs/QmPVjJyJAosfwtiFr7LHoatQszdzCgyx6oE9nnWnuKhSMt/go-mfs"
-	ci "gx/ipfs/QmPvyPwuCgJ7pDmrKDxRtsScJgBaM5h4EpRL2qQJsmXf4n/go-libp2p-crypto"
-	peer "gx/ipfs/QmQsErDt8Qgw1XrsXf2BpEzDgGWtB1YLsTAARBup5b6B9W/go-libp2p-peer"
-	logging "gx/ipfs/QmRREK2CAZ5Re2Bd9zZFG6FeYDppUWt5cMgsoUEp3ktgSr/go-log"
-	fuse "gx/ipfs/QmSJBsmLP1XMjv8hxYg2rUMdPDB7YUpyBo9idjrJ6Cmq6F/fuse"
-	fs "gx/ipfs/QmSJBsmLP1XMjv8hxYg2rUMdPDB7YUpyBo9idjrJ6Cmq6F/fuse/fs"
-	cid "gx/ipfs/QmZFbDTY9jfSBms2MchvYM9oYRbAF19K7Pby47yDBfpPrb/go-cid"
+	dag "github.com/ipfs/go-merkledag"
+	path "github.com/ipfs/go-path"
+	ft "github.com/ipfs/go-unixfs"
+
+	fuse "bazil.org/fuse"
+	fs "bazil.org/fuse/fs"
+	cid "github.com/ipfs/go-cid"
+	logging "github.com/ipfs/go-log"
+	mfs "github.com/ipfs/go-mfs"
+	ci "github.com/libp2p/go-libp2p-core/crypto"
+	peer "github.com/libp2p/go-libp2p-core/peer"
 )
 
 func init() {
@@ -84,7 +86,7 @@ type Root struct {
 }
 
 func ipnsPubFunc(ipfs *core.IpfsNode, k ci.PrivKey) mfs.PubFunc {
-	return func(ctx context.Context, c *cid.Cid) error {
+	return func(ctx context.Context, c cid.Cid) error {
 		return ipfs.Namesys.Publish(ctx, k, path.FromCid(c))
 	}
 }
@@ -96,7 +98,7 @@ func loadRoot(ctx context.Context, rt *keyRoot, ipfs *core.IpfsNode, name string
 		return nil, err
 	}
 
-	node, err := core.Resolve(ctx, ipfs.Namesys, ipfs.Resolver, p)
+	node, err := resolve.Resolve(ctx, ipfs.Namesys, ipfs.Resolver, p)
 	switch err {
 	case nil:
 	case namesys.ErrResolveFailed:
@@ -402,12 +404,13 @@ func (fi *File) Setattr(ctx context.Context, req *fuse.SetattrRequest, resp *fus
 	return nil
 }
 
-// Fsync flushes the content in the file to disk, but does not
-// update the dag tree internally
+// Fsync flushes the content in the file to disk.
 func (fi *FileNode) Fsync(ctx context.Context, req *fuse.FsyncRequest) error {
+	// This needs to perform a *full* flush because, in MFS, a write isn't
+	// persisted until the root is updated.
 	errs := make(chan error, 1)
 	go func() {
-		errs <- fi.fi.Sync()
+		errs <- fi.fi.Flush()
 	}()
 	select {
 	case err := <-errs:
@@ -418,7 +421,8 @@ func (fi *FileNode) Fsync(ctx context.Context, req *fuse.FsyncRequest) error {
 }
 
 func (fi *File) Forget() {
-	err := fi.fi.Sync()
+	// TODO(steb): this seems like a place where we should be *uncaching*, not flushing.
+	err := fi.fi.Flush()
 	if err != nil {
 		log.Debug("forget file error: ", err)
 	}
@@ -434,19 +438,11 @@ func (dir *Directory) Mkdir(ctx context.Context, req *fuse.MkdirRequest) (fs.Nod
 }
 
 func (fi *FileNode) Open(ctx context.Context, req *fuse.OpenRequest, resp *fuse.OpenResponse) (fs.Handle, error) {
-	var mfsflag int
-	switch {
-	case req.Flags.IsReadOnly():
-		mfsflag = mfs.OpenReadOnly
-	case req.Flags.IsWriteOnly():
-		mfsflag = mfs.OpenWriteOnly
-	case req.Flags.IsReadWrite():
-		mfsflag = mfs.OpenReadWrite
-	default:
-		return nil, errors.New("unsupported flag type")
-	}
-
-	fd, err := fi.fi.Open(mfsflag, true)
+	fd, err := fi.fi.Open(mfs.Flags{
+		Read:  req.Flags.IsReadOnly() || req.Flags.IsReadWrite(),
+		Write: req.Flags.IsWriteOnly() || req.Flags.IsReadWrite(),
+		Sync:  true,
+	})
 	if err != nil {
 		return nil, err
 	}
@@ -502,19 +498,11 @@ func (dir *Directory) Create(ctx context.Context, req *fuse.CreateRequest, resp 
 
 	nodechild := &FileNode{fi: fi}
 
-	var openflag int
-	switch {
-	case req.Flags.IsReadOnly():
-		openflag = mfs.OpenReadOnly
-	case req.Flags.IsWriteOnly():
-		openflag = mfs.OpenWriteOnly
-	case req.Flags.IsReadWrite():
-		openflag = mfs.OpenReadWrite
-	default:
-		return nil, nil, errors.New("unsupported open mode")
-	}
-
-	fd, err := fi.Open(openflag, true)
+	fd, err := fi.Open(mfs.Flags{
+		Read:  req.Flags.IsReadOnly() || req.Flags.IsReadWrite(),
+		Write: req.Flags.IsWriteOnly() || req.Flags.IsReadWrite(),
+		Sync:  true,
+	})
 	if err != nil {
 		return nil, nil, err
 	}

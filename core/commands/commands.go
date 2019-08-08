@@ -8,13 +8,11 @@ package commands
 import (
 	"fmt"
 	"io"
+	"os"
 	"sort"
 	"strings"
 
-	e "github.com/ipfs/go-ipfs/core/commands/e"
-
-	cmds "gx/ipfs/QmPTfgFTo9PFr1PvPKyKoeMgBvYPh6cX3aDP7DHKVbnCbi/go-ipfs-cmds"
-	"gx/ipfs/QmSP88ryZkHSRn1fnngAaV2Vcn63WUJzAavnRM9CVdU1Ky/go-ipfs-cmdkit"
+	"github.com/ipfs/go-ipfs-cmds"
 )
 
 type commandEncoder struct {
@@ -61,20 +59,17 @@ const (
 // and returns a command that lists the subcommands in that root
 func CommandsCmd(root *cmds.Command) *cmds.Command {
 	return &cmds.Command{
-		Helptext: cmdkit.HelpText{
+		Helptext: cmds.HelpText{
 			Tagline:          "List all available commands.",
 			ShortDescription: `Lists all available commands (and subcommands) and exits.`,
 		},
-		Options: []cmdkit.Option{
-			cmdkit.BoolOption(flagsOptionName, "f", "Show command flags"),
+		Options: []cmds.Option{
+			cmds.BoolOption(flagsOptionName, "f", "Show command flags"),
 		},
-		Run: func(req *cmds.Request, res cmds.ResponseEmitter, env cmds.Environment) {
+		Run: func(req *cmds.Request, res cmds.ResponseEmitter, env cmds.Environment) error {
 			rootCmd := cmd2outputCmd("ipfs", root)
 			rootCmd.showOpts, _ = req.Options[flagsOptionName].(bool)
-			err := cmds.EmitOnce(res, &rootCmd)
-			if err != nil {
-				log.Error(err)
-			}
+			return cmds.EmitOnce(res, &rootCmd)
 		},
 		Encoders: cmds.EncoderMap{
 			cmds.Text: func(req *cmds.Request) func(io.Writer) cmds.Encoder {
@@ -131,24 +126,45 @@ func cmdPathStrings(cmd *Command, showOptions bool) []string {
 	}
 
 	recurse("", cmd)
-	sort.Sort(sort.StringSlice(cmds))
+	sort.Strings(cmds)
 	return cmds
 }
 
-// changes here will also need to be applied at
-// - ./dag/dag.go
-// - ./object/object.go
-// - ./files/files.go
-// - ./unixfs/unixfs.go
-func unwrapOutput(i interface{}) (interface{}, error) {
-	var (
-		ch <-chan interface{}
-		ok bool
-	)
+type nonFatalError string
 
-	if ch, ok = i.(<-chan interface{}); !ok {
-		return nil, e.TypeErr(ch, i)
+// streamResult is a helper function to stream results that possibly
+// contain non-fatal errors.  The helper function is allowed to panic
+// on internal errors.
+func streamResult(procVal func(interface{}, io.Writer) nonFatalError) func(cmds.Response, cmds.ResponseEmitter) error {
+	return func(res cmds.Response, re cmds.ResponseEmitter) (err error) {
+		defer func() {
+			if r := recover(); r != nil {
+				err = fmt.Errorf("internal error: %v", r)
+			}
+			re.Close()
+		}()
+
+		var errors bool
+		for {
+			v, err := res.Next()
+			if err != nil {
+				if err == io.EOF {
+					break
+				}
+				return err
+			}
+
+			errorMsg := procVal(v, os.Stdout)
+
+			if errorMsg != "" {
+				errors = true
+				fmt.Fprintf(os.Stderr, "%s\n", errorMsg)
+			}
+		}
+
+		if errors {
+			return fmt.Errorf("errors while displaying some entries")
+		}
+		return nil
 	}
-
-	return <-ch, nil
 }

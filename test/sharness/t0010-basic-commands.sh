@@ -41,14 +41,14 @@ test_expect_success "ipfs version --all has all required fields" '
   grep "Golang version" version_all.txt
 '
 
-test_expect_success "ipfs help succeeds" '
-  ipfs help >help.txt
+test_expect_success "ipfs version deps succeeds" '
+  ipfs version deps >deps.txt
 '
 
-test_expect_success "ipfs help output looks good" '
-  egrep -i "^Usage" help.txt >/dev/null &&
-  egrep "ipfs <command>" help.txt >/dev/null ||
-  test_fsh cat help.txt
+test_expect_success "ipfs version deps output looks good" '
+  head -1 deps.txt | grep "go-ipfs@(devel)" &&
+  [[ $(tail -n +2 deps.txt | egrep -v -c "^[^ @]+@v[^ @]+( => [^ @]+@v[^ @]+)?$") -eq 0 ]] ||
+  test_fsh cat deps.txt
 '
 
 test_expect_success "'ipfs commands' succeeds" '
@@ -59,6 +59,21 @@ test_expect_success "'ipfs commands' output looks good" '
   grep "ipfs add" commands.txt &&
   grep "ipfs daemon" commands.txt &&
   grep "ipfs update" commands.txt
+'
+
+test_expect_success "All sub-commands accept help" '
+  echo 0 > fail
+  while read -r cmd
+  do
+    ${cmd:0:4} help ${cmd:5} >/dev/null ||
+      { echo "$cmd doesnt accept --help"; echo 1 > fail; }
+    echo stuff | $cmd --help >/dev/null ||
+      { echo "$cmd doesnt accept --help when using stdin"; echo 1 > fail; }
+  done <commands.txt
+
+  if [ $(cat fail) = 1 ]; then
+    return 1
+  fi
 '
 
 test_expect_success "All commands accept --help" '
@@ -78,6 +93,7 @@ test_expect_success "All commands accept --help" '
 
 test_expect_failure "All ipfs root commands are mentioned in base helptext" '
   echo 0 > fail
+  ipfs --help > help.txt
   cut -d" " -f 2 commands.txt | grep -v ipfs | sort -u | \
   while read cmd
   do
@@ -108,7 +124,7 @@ test_expect_success "All ipfs commands fail when passed a bad flag" '
   echo 0 > fail
   while read -r cmd
   do
-    test_must_fail $cmd --badflag >/dev/null ||
+    test_must_fail $cmd --badflag >/dev/null 2>&1 ||
       { echo "$cmd exit with code 0 when passed --badflag"; echo 1 > fail; }
   done <commands.txt
 

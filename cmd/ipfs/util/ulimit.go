@@ -1,13 +1,12 @@
 package util
 
 import (
-	"errors"
 	"fmt"
 	"os"
 	"strconv"
 	"syscall"
 
-	logging "gx/ipfs/QmRREK2CAZ5Re2Bd9zZFG6FeYDppUWt5cMgsoUEp3ktgSr/go-log"
+	logging "github.com/ipfs/go-log"
 )
 
 var log = logging.Logger("ulimit")
@@ -16,50 +15,52 @@ var (
 	supportsFDManagement = false
 
 	// getlimit returns the soft and hard limits of file descriptors counts
-	getLimit func() (int64, int64, error)
+	getLimit func() (uint64, uint64, error)
 	// set limit sets the soft and hard limits of file descriptors counts
-	setLimit func(int64, int64) error
+	setLimit func(uint64, uint64) error
 )
 
-// maxFds is the maximum number of file descriptors that go-ipfs
-// can use. The default value is 1024. This can be overwritten by the
-// IPFS_FD_MAX env variable
-var maxFds = uint64(2048)
+// minimum file descriptor limit before we complain
+const minFds = 2048
 
-// setMaxFds sets the maxFds value from IPFS_FD_MAX
-// env variable if it's present on the system
-func setMaxFds() {
+// default max file descriptor limit.
+const maxFds = 8192
+
+// userMaxFDs returns the value of IPFS_FD_MAX
+func userMaxFDs() uint64 {
 	// check if the IPFS_FD_MAX is set up and if it does
 	// not have a valid fds number notify the user
 	if val := os.Getenv("IPFS_FD_MAX"); val != "" {
-
 		fds, err := strconv.ParseUint(val, 10, 64)
 		if err != nil {
 			log.Errorf("bad value for IPFS_FD_MAX: %s", err)
-			return
+			return 0
 		}
-
-		maxFds = fds
+		return fds
 	}
+	return 0
 }
 
 // ManageFdLimit raise the current max file descriptor count
 // of the process based on the IPFS_FD_MAX value
-func ManageFdLimit() error {
+func ManageFdLimit() (changed bool, newLimit uint64, err error) {
 	if !supportsFDManagement {
-		return nil
+		return false, 0, nil
 	}
 
-	setMaxFds()
+	targetLimit := uint64(maxFds)
+	userLimit := userMaxFDs()
+	if userLimit > 0 {
+		targetLimit = userLimit
+	}
+
 	soft, hard, err := getLimit()
 	if err != nil {
-		return err
+		return false, 0, err
 	}
 
-	max := int64(maxFds)
-
-	if max <= soft {
-		return nil
+	if targetLimit <= soft {
+		return false, 0, nil
 	}
 
 	// the soft limit is the value that the kernel enforces for the
@@ -67,25 +68,47 @@ func ManageFdLimit() error {
 	// the hard limit acts as a ceiling for the soft limit
 	// an unprivileged process may only set it's soft limit to a
 	// alue in the range from 0 up to the hard limit
-	if err = setLimit(max, max); err != nil {
-		if err != syscall.EPERM {
-			return fmt.Errorf("error setting: ulimit: %s", err)
+	err = setLimit(targetLimit, targetLimit)
+	switch err {
+	case nil:
+		newLimit = targetLimit
+	case syscall.EPERM:
+		// lower limit if necessary.
+		if targetLimit > hard {
+			targetLimit = hard
 		}
 
 		// the process does not have permission so we should only
 		// set the soft value
-		if max > hard {
-			return errors.New(
-				"cannot set rlimit, IPFS_FD_MAX is larger than the hard limit",
+		err = setLimit(targetLimit, hard)
+		if err != nil {
+			err = fmt.Errorf("error setting ulimit wihout hard limit: %s", err)
+			break
+		}
+		newLimit = targetLimit
+
+		// Warn on lowered limit.
+
+		if newLimit < userLimit {
+			err = fmt.Errorf(
+				"failed to raise ulimit to IPFS_FD_MAX (%d): set to %d",
+				userLimit,
+				newLimit,
 			)
+			break
 		}
 
-		if err = setLimit(max, hard); err != nil {
-			return fmt.Errorf("error setting ulimit wihout hard limit: %s", err)
+		if userLimit == 0 && newLimit < minFds {
+			err = fmt.Errorf(
+				"failed to raise ulimit to minimum %d: set to %d",
+				minFds,
+				newLimit,
+			)
+			break
 		}
+	default:
+		err = fmt.Errorf("error setting: ulimit: %s", err)
 	}
 
-	fmt.Printf("Successfully raised file descriptor limit to %d.\n", max)
-
-	return nil
+	return newLimit > 0, newLimit, err
 }

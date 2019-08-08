@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	cmds "gx/ipfs/QmPTfgFTo9PFr1PvPKyKoeMgBvYPh6cX3aDP7DHKVbnCbi/go-ipfs-cmds"
+	cmds "github.com/ipfs/go-ipfs-cmds"
 )
 
 func collectPaths(prefix string, cmd *cmds.Command, out map[string]struct{}) {
@@ -161,13 +161,12 @@ func TestCommands(t *testing.T) {
 		"/object/put",
 		"/object/stat",
 		"/p2p",
-		"/p2p/listener",
-		"/p2p/listener/close",
-		"/p2p/listener/ls",
-		"/p2p/listener/open",
+		"/p2p/close",
+		"/p2p/forward",
+		"/p2p/listen",
+		"/p2p/ls",
 		"/p2p/stream",
 		"/p2p/stream/close",
-		"/p2p/stream/dial",
 		"/p2p/stream/ls",
 		"/pin",
 		"/pin/add",
@@ -212,6 +211,13 @@ func TestCommands(t *testing.T) {
 		"/urlstore",
 		"/urlstore/add",
 		"/version",
+		"/version/deps",
+		"/cid",
+		"/cid/format",
+		"/cid/base32",
+		"/cid/codecs",
+		"/cid/bases",
+		"/cid/hashes",
 	}
 
 	cmdSet := make(map[string]struct{})

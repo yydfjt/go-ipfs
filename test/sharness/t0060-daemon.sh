@@ -42,9 +42,11 @@ test_expect_success "ipfs gateway works with the correct allowed origin port" '
 test_expect_success "ipfs daemon output looks good" '
   STARTFILE="ipfs cat /ipfs/$HASH_WELCOME_DOCS/readme" &&
   echo "Initializing daemon..." >expected_daemon &&
+  ipfs version --all >> expected_daemon &&
   sed "s/^/Swarm listening on /" listen_addrs >>expected_daemon &&
   sed "s/^/Swarm announcing /" local_addrs >>expected_daemon &&
   echo "API server listening on '$API_MADDR'" >>expected_daemon &&
+  echo "WebUI: http://'$API_ADDR'/webui" >>expected_daemon &&
   echo "Gateway (readonly) server listening on '$GWAY_MADDR'" >>expected_daemon &&
   echo "Daemon is ready" >>expected_daemon &&
   test_cmp expected_daemon actual_daemon
@@ -69,6 +71,16 @@ test_expect_success "ipfs version output looks good" '
   test_fsh cat version.txt
 '
 
+test_expect_success "ipfs version deps succeeds" '
+  ipfs version deps >deps.txt
+'
+
+test_expect_success "ipfs version deps output looks good" '
+  head -1 deps.txt | grep "go-ipfs@(devel)" &&
+  [[ $(tail -n +2 deps.txt | egrep -v -c "^[^ @]+@v[^ @]+( => [^ @]+@v[^ @]+)?$") -eq 0 ]] ||
+  test_fsh cat deps.txt
+'
+
 test_expect_success "ipfs help succeeds" '
   ipfs help >help.txt
 '
@@ -80,13 +92,13 @@ test_expect_success "ipfs help output looks good" '
 '
 
 # netcat (nc) is needed for the following test
-test_expect_success "nc is available" '
-  type nc >/dev/null
+test_expect_success "socat is available" '
+  type socat >/dev/null
 '
 
 # check transport is encrypted
 test_expect_success "transport should be encrypted" '
-  nc -w 1 localhost $SWARM_PORT > swarmnc < ../t0060-data/mss-ls &&
+  socat - tcp:localhost:$SWARM_PORT,connect-timeout=1 > swarmnc < ../t0060-data/mss-ls &&
   grep -q "/secio" swarmnc &&
   test_must_fail grep -q "/plaintext/1.0.0" swarmnc ||
   test_fsh cat swarmnc
@@ -126,12 +138,17 @@ test_expect_success "daemon with pipe eventually becomes live" '
   test_fsh cat stdin_daemon_out || test_fsh cat stdin_daemon_err || test_fsh cat stdin_poll_apiout || test_fsh cat stdin_poll_apierr
 '
 
+test_expect_success "'ipfs daemon' cleans up when it fails to start" '
+  test_must_fail ipfs daemon --routing=foobar &&
+  test ! -e "$IPFS_PATH/repo.lock"
+'
+
 ulimit -S -n 512
 TEST_ULIMIT_PRESET=1
 test_launch_ipfs_daemon
 
 test_expect_success "daemon raised its fd limit" '
-  grep "raised file descriptor limit to 2048." actual_daemon > /dev/null
+  grep -v "setting file descriptor limit" actual_daemon > /dev/null
 '
 
 test_expect_success "daemon actually can handle 2048 file descriptors" '

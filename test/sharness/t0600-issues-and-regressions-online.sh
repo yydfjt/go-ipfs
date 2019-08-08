@@ -47,8 +47,8 @@ test_expect_success "pin add api looks right - #3753" '
 '
 
 test_expect_success "no daemon crash on improper file argument - #4003" '
-  FNC=$(echo $API_ADDR | awk -F: '\''{ printf "%s %s", $1, $2 }'\'') &&
-  printf "POST /api/v0/add?pin=true HTTP/1.1\r\nHost: $API_ADDR\r\nContent-Type: multipart/form-data; boundary=Pyw9xQLtiLPE6XcI\r\nContent-Length: 22\r\n\r\n\r\n--Pyw9xQLtiLPE6XcI\r\n" | nc -v $FNC | grep -m1 "500 Internal Server Error"
+  FNC=$(echo $API_ADDR | awk -F: '\''{ printf "%s:%s", $1, $2 }'\'') &&
+  printf "POST /api/v0/add?pin=true HTTP/1.1\r\nHost: $API_ADDR\r\nContent-Type: multipart/form-data; boundary=Pyw9xQLtiLPE6XcI\r\nContent-Length: 22\r\n\r\n\r\n--Pyw9xQLtiLPE6XcI\r\n" | socat STDIO tcp-connect:$FNC | grep -m1 "500 Internal Server Error"
 '
 
 test_kill_ipfs_daemon
@@ -58,6 +58,30 @@ test_expect_success "ipfs daemon --offline --mount fails - #2995" '
   grep "mount is not currently supported in offline mode" daemon_err ||
   test_fsh cat daemon_err
 '
+
+test_launch_ipfs_daemon --offline
+
+test_expect_success "'ipfs name resolve' succeeds after ipfs id when daemon offline" '
+  PEERID=`ipfs id --format="<id>"` &&
+  test_check_peerid "${PEERID}" &&
+  ipfs name publish --allow-offline  -Q "/ipfs/$HASH_WELCOME_DOCS" >publish_out
+'
+
+test_expect_success "pubrmlish --quieter output looks good" '
+  echo "${PEERID}" >expected1 &&
+  test_cmp expected1 publish_out
+'
+
+test_expect_success "'ipfs name resolve' succeeds" '
+  ipfs name resolve "$PEERID" >output
+'
+
+test_expect_success "resolve output looks good" '
+  printf "/ipfs/%s\n" "$HASH_WELCOME_DOCS" >expected2 &&
+  test_cmp expected2 output
+'
+
+test_kill_ipfs_daemon
 
 test_done
 

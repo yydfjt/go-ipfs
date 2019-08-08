@@ -2,31 +2,35 @@ package pin
 
 import (
 	"context"
+	"io"
 	"testing"
 	"time"
 
-	mdag "gx/ipfs/QmRDaC5z6yXkXTTSWzaxs2sSVBon5RRCN6eNtMmpuHtKCr/go-merkledag"
-	bs "gx/ipfs/QmdHqV7L4bpmMtEXVCrgn8RN6CXqMr3aUeogSkXbJGRtwk/go-blockservice"
+	bs "github.com/ipfs/go-blockservice"
+	mdag "github.com/ipfs/go-merkledag"
 
-	util "gx/ipfs/QmPdKqUcHGFdeSpvjVoaTRPPstGif9GBZb5Q56RVw9o69A/go-ipfs-util"
-	ds "gx/ipfs/QmVG5gxteQNEMhrS8prJSmU2C9rebtFuTd3SYZ5kE3YZ5k/go-datastore"
-	dssync "gx/ipfs/QmVG5gxteQNEMhrS8prJSmU2C9rebtFuTd3SYZ5kE3YZ5k/go-datastore/sync"
-	cid "gx/ipfs/QmZFbDTY9jfSBms2MchvYM9oYRbAF19K7Pby47yDBfpPrb/go-cid"
-	offline "gx/ipfs/QmZxjqR9Qgompju73kakSoUj3rbVndAzky3oCDiBNCxPs1/go-ipfs-exchange-offline"
-	blockstore "gx/ipfs/QmcmpX42gtDv1fz24kau4wjS9hfwWj5VexWBKgGnWzsyag/go-ipfs-blockstore"
+	cid "github.com/ipfs/go-cid"
+	ds "github.com/ipfs/go-datastore"
+	dssync "github.com/ipfs/go-datastore/sync"
+	blockstore "github.com/ipfs/go-ipfs-blockstore"
+	offline "github.com/ipfs/go-ipfs-exchange-offline"
+	util "github.com/ipfs/go-ipfs-util"
 )
 
 var rand = util.NewTimeSeededRand()
 
-func randNode() (*mdag.ProtoNode, *cid.Cid) {
+func randNode() (*mdag.ProtoNode, cid.Cid) {
 	nd := new(mdag.ProtoNode)
 	nd.SetData(make([]byte, 32))
-	rand.Read(nd.Data())
+	_, err := io.ReadFull(rand, nd.Data())
+	if err != nil {
+		panic(err)
+	}
 	k := nd.Cid()
 	return nd, k
 }
 
-func assertPinned(t *testing.T, p Pinner, c *cid.Cid, failmsg string) {
+func assertPinned(t *testing.T, p Pinner, c cid.Cid, failmsg string) {
 	_, pinned, err := p.IsPinned(c)
 	if err != nil {
 		t.Fatal(err)
@@ -37,7 +41,7 @@ func assertPinned(t *testing.T, p Pinner, c *cid.Cid, failmsg string) {
 	}
 }
 
-func assertUnpinned(t *testing.T, p Pinner, c *cid.Cid, failmsg string) {
+func assertUnpinned(t *testing.T, p Pinner, c cid.Cid, failmsg string) {
 	_, pinned, err := p.IsPinned(c)
 	if err != nil {
 		t.Fatal(err)
@@ -111,11 +115,11 @@ func TestPinnerBasic(t *testing.T) {
 	assertPinned(t, p, bk, "Recursively pinned node not found..")
 
 	d, _ := randNode()
-	d.AddNodeLink("a", a)
-	d.AddNodeLink("c", c)
+	_ = d.AddNodeLink("a", a)
+	_ = d.AddNodeLink("c", c)
 
 	e, _ := randNode()
-	d.AddNodeLink("e", e)
+	_ = d.AddNodeLink("e", e)
 
 	// Must be in dagserv for unpin to work
 	err = dserv.Add(ctx, e)
@@ -187,7 +191,7 @@ func TestIsPinnedLookup(t *testing.T) {
 	p := NewPinner(dstore, dserv, dserv)
 
 	aNodes := make([]*mdag.ProtoNode, aBranchLen)
-	aKeys := make([]*cid.Cid, aBranchLen)
+	aKeys := make([]cid.Cid, aBranchLen)
 	for i := 0; i < aBranchLen; i++ {
 		a, _ := randNode()
 		if i >= 1 {
@@ -385,8 +389,12 @@ func TestPinUpdate(t *testing.T) {
 	n1, c1 := randNode()
 	n2, c2 := randNode()
 
-	dserv.Add(ctx, n1)
-	dserv.Add(ctx, n2)
+	if err := dserv.Add(ctx, n1); err != nil {
+		t.Fatal(err)
+	}
+	if err := dserv.Add(ctx, n2); err != nil {
+		t.Fatal(err)
+	}
 
 	if err := p.Pin(ctx, n1, true); err != nil {
 		t.Fatal(err)

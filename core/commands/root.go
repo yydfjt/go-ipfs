@@ -2,20 +2,15 @@ package commands
 
 import (
 	"errors"
-	"io"
-	"strings"
 
-	oldcmds "github.com/ipfs/go-ipfs/commands"
-	lgc "github.com/ipfs/go-ipfs/commands/legacy"
+	cmdenv "github.com/ipfs/go-ipfs/core/commands/cmdenv"
 	dag "github.com/ipfs/go-ipfs/core/commands/dag"
-	e "github.com/ipfs/go-ipfs/core/commands/e"
 	name "github.com/ipfs/go-ipfs/core/commands/name"
 	ocmd "github.com/ipfs/go-ipfs/core/commands/object"
 	unixfs "github.com/ipfs/go-ipfs/core/commands/unixfs"
 
-	"gx/ipfs/QmPTfgFTo9PFr1PvPKyKoeMgBvYPh6cX3aDP7DHKVbnCbi/go-ipfs-cmds"
-	logging "gx/ipfs/QmRREK2CAZ5Re2Bd9zZFG6FeYDppUWt5cMgsoUEp3ktgSr/go-log"
-	"gx/ipfs/QmSP88ryZkHSRn1fnngAaV2Vcn63WUJzAavnRM9CVdU1Ky/go-ipfs-cmdkit"
+	cmds "github.com/ipfs/go-ipfs-cmds"
+	logging "github.com/ipfs/go-log"
 )
 
 var log = logging.Logger("core/commands")
@@ -23,13 +18,17 @@ var log = logging.Logger("core/commands")
 var ErrNotOnline = errors.New("this command must be run in online mode. Try running 'ipfs daemon' first")
 
 const (
-	ApiOption = "api"
+	ConfigOption  = "config"
+	DebugOption   = "debug"
+	LocalOption   = "local" // DEPRECATED: use OfflineOption
+	OfflineOption = "offline"
+	ApiOption     = "api"
 )
 
 var Root = &cmds.Command{
-	Helptext: cmdkit.HelpText{
+	Helptext: cmds.HelpText{
 		Tagline:  "Global p2p merkle-dag filesystem.",
-		Synopsis: "ipfs [--config=<config> | -c] [--debug=<debug> | -D] [--help=<help>] [-h=<h>] [--local=<local> | -L] [--api=<api>] <command> ...",
+		Synopsis: "ipfs [--config=<config> | -c] [--debug | -D] [--help] [-h] [--api=<api>] [--offline] [--cid-base=<base>] [--upgrade-cidv0-in-output] [--encoding=<encoding> | --enc] [--timeout=<timeout>] <command> ...",
 		Subcommands: `
 BASIC COMMANDS
   init          Initialize ipfs local configuration
@@ -71,6 +70,8 @@ TOOL COMMANDS
   version       Show ipfs version information
   update        Download and apply go-ipfs updates
   commands      List all available commands
+  cid           Convert and discover properties of CIDs
+  log           Manage and show logs of running daemon
 
 Use 'ipfs <command> --help' to learn more about each command.
 
@@ -88,15 +89,19 @@ The CLI will exit with one of the following values:
 1     Failed executions.
 `,
 	},
-	Options: []cmdkit.Option{
-		cmdkit.StringOption("config", "c", "Path to the configuration file to use."),
-		cmdkit.BoolOption("debug", "D", "Operate in debug mode."),
-		cmdkit.BoolOption("help", "Show the full command help text."),
-		cmdkit.BoolOption("h", "Show a short version of the command help text."),
-		cmdkit.BoolOption("local", "L", "Run the command locally, instead of using the daemon."),
-		cmdkit.StringOption(ApiOption, "Use a specific API instance (defaults to /ip4/127.0.0.1/tcp/5001)"),
+	Options: []cmds.Option{
+		cmds.StringOption(ConfigOption, "c", "Path to the configuration file to use."),
+		cmds.BoolOption(DebugOption, "D", "Operate in debug mode."),
+		cmds.BoolOption(cmds.OptLongHelp, "Show the full command help text."),
+		cmds.BoolOption(cmds.OptShortHelp, "Show a short version of the command help text."),
+		cmds.BoolOption(LocalOption, "L", "Run the command locally, instead of using the daemon. DEPRECATED: use --offline."),
+		cmds.BoolOption(OfflineOption, "Run the command offline."),
+		cmds.StringOption(ApiOption, "Use a specific API instance (defaults to /ip4/127.0.0.1/tcp/5001)"),
 
 		// global options, added to every command
+		cmdenv.OptionCidBase,
+		cmdenv.OptionUpgradeCidV0InOutput,
+
 		cmds.OptionEncodingType,
 		cmds.OptionStreamChannels,
 		cmds.OptionTimeout,
@@ -118,31 +123,32 @@ var rootSubcommands = map[string]*cmds.Command{
 	"pubsub":    PubsubCmd,
 	"repo":      RepoCmd,
 	"stats":     StatsCmd,
-	"bootstrap": lgc.NewCommand(BootstrapCmd),
-	"config":    lgc.NewCommand(ConfigCmd),
-	"dag":       lgc.NewCommand(dag.DagCmd),
-	"dht":       lgc.NewCommand(DhtCmd),
-	"diag":      lgc.NewCommand(DiagCmd),
-	"dns":       lgc.NewCommand(DNSCmd),
-	"id":        lgc.NewCommand(IDCmd),
+	"bootstrap": BootstrapCmd,
+	"config":    ConfigCmd,
+	"dag":       dag.DagCmd,
+	"dht":       DhtCmd,
+	"diag":      DiagCmd,
+	"dns":       DNSCmd,
+	"id":        IDCmd,
 	"key":       KeyCmd,
-	"log":       lgc.NewCommand(LogCmd),
-	"ls":        lgc.NewCommand(LsCmd),
-	"mount":     lgc.NewCommand(MountCmd),
+	"log":       LogCmd,
+	"ls":        LsCmd,
+	"mount":     MountCmd,
 	"name":      name.NameCmd,
 	"object":    ocmd.ObjectCmd,
-	"pin":       lgc.NewCommand(PinCmd),
-	"ping":      lgc.NewCommand(PingCmd),
-	"p2p":       lgc.NewCommand(P2PCmd),
-	"refs":      lgc.NewCommand(RefsCmd),
-	"resolve":   lgc.NewCommand(ResolveCmd),
-	"swarm":     lgc.NewCommand(SwarmCmd),
-	"tar":       lgc.NewCommand(TarCmd),
-	"file":      lgc.NewCommand(unixfs.UnixFSCmd),
-	"update":    lgc.NewCommand(ExternalBinary()),
+	"pin":       PinCmd,
+	"ping":      PingCmd,
+	"p2p":       P2PCmd,
+	"refs":      RefsCmd,
+	"resolve":   ResolveCmd,
+	"swarm":     SwarmCmd,
+	"tar":       TarCmd,
+	"file":      unixfs.UnixFSCmd,
+	"update":    ExternalBinary("Please see https://git.io/fjylH for installation instructions."),
 	"urlstore":  urlStoreCmd,
-	"version":   lgc.NewCommand(VersionCmd),
+	"version":   VersionCmd,
 	"shutdown":  daemonShutdownCmd,
+	"cid":       CidCmd,
 }
 
 // RootRO is the readonly version of Root
@@ -150,7 +156,11 @@ var RootRO = &cmds.Command{}
 
 var CommandsDaemonROCmd = CommandsCmd(RootRO)
 
-var RefsROCmd = &oldcmds.Command{}
+// RefsROCmd is `ipfs refs` command
+var RefsROCmd = &cmds.Command{}
+
+// VersionROCmd is `ipfs version` command (without deps).
+var VersionROCmd = &cmds.Command{}
 
 var rootROSubcommands = map[string]*cmds.Command{
 	"commands": CommandsDaemonROCmd,
@@ -162,63 +172,52 @@ var rootROSubcommands = map[string]*cmds.Command{
 		},
 	},
 	"get": GetCmd,
-	"dns": lgc.NewCommand(DNSCmd),
-	"ls":  lgc.NewCommand(LsCmd),
-	"name": &cmds.Command{
+	"dns": DNSCmd,
+	"ls":  LsCmd,
+	"name": {
 		Subcommands: map[string]*cmds.Command{
 			"resolve": name.IpnsCmd,
 		},
 	},
-	"object": lgc.NewCommand(&oldcmds.Command{
-		Subcommands: map[string]*oldcmds.Command{
+	"object": {
+		Subcommands: map[string]*cmds.Command{
 			"data":  ocmd.ObjectDataCmd,
 			"links": ocmd.ObjectLinksCmd,
 			"get":   ocmd.ObjectGetCmd,
 			"stat":  ocmd.ObjectStatCmd,
 		},
-	}),
-	"dag": lgc.NewCommand(&oldcmds.Command{
-		Subcommands: map[string]*oldcmds.Command{
+	},
+	"dag": {
+		Subcommands: map[string]*cmds.Command{
 			"get":     dag.DagGetCmd,
 			"resolve": dag.DagResolveCmd,
 		},
-	}),
-	"resolve": lgc.NewCommand(ResolveCmd),
-	"version": lgc.NewCommand(VersionCmd),
+	},
+	"resolve": ResolveCmd,
 }
 
 func init() {
 	Root.ProcessHelp()
 	*RootRO = *Root
 
-	// sanitize readonly refs command
-	*RefsROCmd = *RefsCmd
-	RefsROCmd.Subcommands = map[string]*oldcmds.Command{}
-
 	// this was in the big map definition above before,
 	// but if we leave it there lgc.NewCommand will be executed
 	// before the value is updated (:/sanitize readonly refs command/)
-	rootROSubcommands["refs"] = lgc.NewCommand(RefsROCmd)
+
+	// sanitize readonly refs command
+	*RefsROCmd = *RefsCmd
+	RefsROCmd.Subcommands = map[string]*cmds.Command{}
+	rootROSubcommands["refs"] = RefsROCmd
+
+	// sanitize readonly version command (no need to expose precise deps)
+	*VersionROCmd = *VersionCmd
+	VersionROCmd.Subcommands = map[string]*cmds.Command{}
+	rootROSubcommands["version"] = VersionROCmd
 
 	Root.Subcommands = rootSubcommands
-
 	RootRO.Subcommands = rootROSubcommands
 }
 
 type MessageOutput struct {
 	Message string
-}
-
-func MessageTextMarshaler(res oldcmds.Response) (io.Reader, error) {
-	v, err := unwrapOutput(res.Output())
-	if err != nil {
-		return nil, err
-	}
-
-	out, ok := v.(*MessageOutput)
-	if !ok {
-		return nil, e.TypeErr(out, v)
-	}
-
-	return strings.NewReader(out.Message), nil
 }

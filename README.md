@@ -7,13 +7,7 @@
 [![](https://img.shields.io/badge/freenode-%23ipfs-blue.svg?style=flat-square)](http://webchat.freenode.net/?channels=%23ipfs)
 [![standard-readme compliant](https://img.shields.io/badge/standard--readme-OK-green.svg?style=flat-square)](https://github.com/RichardLitt/standard-readme)
 [![GoDoc](https://godoc.org/github.com/ipfs/go-ipfs?status.svg)](https://godoc.org/github.com/ipfs/go-ipfs)
-[![Build Status](https://travis-ci.org/ipfs/go-ipfs.svg?branch=master)](https://travis-ci.org/ipfs/go-ipfs)
-
-## Project Status
-
-[![Throughput Graph](https://graphs.waffle.io/ipfs/go-ipfs/throughput.svg)](https://waffle.io/ipfs/go-ipfs/metrics/throughput)
-
-[**`Weekly Core Dev Calls`**](https://github.com/ipfs/pm/issues/674)
+[![Build Status](https://circleci.com/gh/ipfs/go-ipfs.svg?style=svg)](https://circleci.com/gh/ipfs/go-ipfs)
 
 ## What is IPFS?
 
@@ -43,6 +37,7 @@ Please put all issues regarding:
   - [Some things to try](#some-things-to-try)
   - [Docker usage](#docker-usage)
   - [Troubleshooting](#troubleshooting-1)
+- [Packages](#packages)
 - [Development](#development)
 - [Contributing](#contributing)
 - [License](#license)
@@ -57,11 +52,16 @@ If the issue is a protocol weakness that cannot be immediately exploited or some
 
 ## Install
 
-The canonical download instructions for IPFS are over at: http://ipfs.io/docs/install/. It is **highly suggested** you follow those instructions if you are not interested in working on IPFS development.
+The canonical download instructions for IPFS are over at: https://docs.ipfs.io/guides/guides/install/. It is **highly suggested** you follow those instructions if you are not interested in working on IPFS development.
 
 ### System Requirements
 
-IPFS can run on most Linux, macOS, and Windows systems. We recommend running it on a machine with at least 2 GB of RAM (it’ll do fine with only one CPU core), but it should run fine with as little as 1 GB of RAM. On systems with less memory, it may not be completely stable.
+IPFS can run on most Linux, macOS, and Windows systems. We recommend running it on a machine with at least 2 GB of RAM and 2 CPU cores (go-ipfs is highly parallel). On systems with less memory, it may not be completely stable.
+
+If your system is resource constrained, we recommend:
+
+1. Installing OpenSSL and rebuilding go-ipfs manually with `make build GOFLAGS=-tags=openssl`. See the [download and compile](#download-and-compile-ipfs) section for more information on compiling go-ipfs.
+2. Initializing your daemon with `ipfs init --profile=lowpower`
 
 ### Install prebuilt packages
 
@@ -100,7 +100,16 @@ For Linux and MacOSX you can use the purely functional package manager [Nix](htt
 ```
 $ nix-env -i ipfs
 ```
+
 You can also install the Package by using it's attribute name, which is also `ipfs`.
+
+#### Guix
+
+GNU's functional package manager, [Guix](https://www.gnu.org/software/guix/), also provides a go-ipfs package:
+
+```
+$ guix package -i go-ipfs
+```
 
 #### Snap
 
@@ -110,11 +119,32 @@ With snap, in any of the [supported Linux distributions](https://snapcraft.io/do
 $ sudo snap install ipfs
 ```
 
+### From Windows package managers
+
+- [Chocolatey](#chocolatey)
+- [Scoop](#scoop)
+
+#### Chocolatey
+
+The package [ipfs](https://chocolatey.org/packages/ipfs) currently points to go-ipfs and is being maintained.
+
+```Powershell
+PS> choco install ipfs
+```
+
+#### Scoop
+
+Scoop provides `go-ipfs` in its 'extras' bucket.
+```Powershell
+PS> scoop bucket add extras
+PS> scoop install go-ipfs
+```
+
 ### Build from Source
 
 #### Install Go
 
-The build process for ipfs requires Go 1.10 or higher. If you don't have it: [Download Go 1.10+](https://golang.org/dl/).
+The build process for ipfs requires Go 1.12 or higher. If you don't have it: [Download Go 1.12+](https://golang.org/dl/).
 
 You'll need to add Go's bin directories to your `$PATH` environment variable e.g., by adding these lines to your `/etc/profile` (for a system-wide installation) or `$HOME/.profile`:
 
@@ -128,33 +158,21 @@ export PATH=$PATH:$GOPATH/bin
 #### Download and Compile IPFS
 
 ```
-$ go get -u -d github.com/ipfs/go-ipfs
+$ git clone https://github.com/ipfs/go-ipfs.git
 
-$ cd $GOPATH/src/github.com/ipfs/go-ipfs
+$ cd go-ipfs
 $ make install
 ```
 
-If you are building on FreeBSD instead of `make install` use `gmake install`.
-
-#### Building on less common systems
-
-If your operating system isn't officially supported, but you still want to try
-building ipfs anyways (it should work fine in most cases), you can do the
-following instead of `make install`:
-
+If you are building on a non-GNU system, use `gmake` in place of `make`.  
+Unsupported platforms (run `(g)make supported` for a list) will also need to set the `nofuse` gotag during build.
 ```
-$ make install_unsupported
+$ GOTAGS=nofuse (g)make install
 ```
-
-Note: This process may break if [gx](https://github.com/whyrusleeping/gx)
-(used for dependency management) or any of its dependencies break as `go get`
-will always select the latest code for every dependency, often resulting in
-mismatched APIs.
 
 #### Troubleshooting
 
 - Separate [instructions are available for building on Windows](docs/windows.md).
-- Also, [instructions for OpenBSD](docs/openbsd.md).
 - `git` is required in order for `go get` to fetch all dependencies.
 - Package managers often contain out-of-date `golang` packages.
   Ensure that `go version` reports at least 1.10. See above for how to install go.
@@ -316,6 +334,19 @@ Stop the running container:
 
     docker stop ipfs_host
 
+When starting a container running ipfs for the first time with an empty data directory, it will call `ipfs init` to initialize configuration files and generate a new keypair. At this time, you can choose which profile to apply using the `IPFS_PROFILE` environment variable:
+
+    docker run -d --name ipfs_host -e IPFS_PROFILE=server -v $ipfs_staging:/export -v $ipfs_data:/data/ipfs -p 4001:4001 -p 127.0.0.1:8080:8080 -p 127.0.0.1:5001:5001 ipfs/go-ipfs:latest
+
+It is possible to initialize the container with a swarm key file (`/data/ipfs/swarm.key`) using the variables `IPFS_SWARM_KEY` and `IPFS_SWARM_KEY_FILE`. The `IPFS_SWARM_KEY` creates `swarm.key` with the contents of the variable itself, whilst `IPFS_SWARM_KEY_FILE` copies the key from a path stored in the variable. The `IPFS_SWARM_KEY_FILE` **overwrites** the key generated by `IPFS_SWARM_KEY`.
+
+    docker run -d --name ipfs_host -e IPFS_SWARM_KEY=<your swarm key> -v $ipfs_staging:/export -v $ipfs_data:/data/ipfs -p 4001:4001 -p 127.0.0.1:8080:8080 -p 127.0.0.1:5001:5001 ipfs/go-ipfs:latest
+
+The swarm key initialization can also be done using docker secrets **(requires docker swarm or docker-compose)**:
+
+    cat your_swarm.key | docker secret create swarm_key_secret -
+    docker run -d --name ipfs_host --secret swarm_key_secret -e IPFS_SWARM_KEY_FILE=/run/secrets/swarm_key_secret -v $ipfs_staging:/export -v $ipfs_data:/data/ipfs -p 4001:4001 -p 127.0.0.1:8080:8080 -p 127.0.0.1:5001:5001 ipfs/go-ipfs:latest
+
 ### Troubleshooting
 
 If you have previously installed IPFS before and you are running into problems getting a newer version to work, try deleting (or backing up somewhere else) your IPFS config directory (~/.ipfs by default) and rerunning `ipfs init`. This will reinitialize the config file to its defaults and clear out the local datastore of any bad entries.
@@ -323,6 +354,57 @@ If you have previously installed IPFS before and you are running into problems g
 Please direct general questions and help requests to our [forum](https://discuss.ipfs.io) or our IRC channel (freenode #ipfs).
 
 If you believe you've found a bug, check the [issues list](https://github.com/ipfs/go-ipfs/issues) and, if you don't see your problem there, either come talk to us on IRC (freenode #ipfs) or file an issue of your own!
+
+## Packages
+
+> This table is generated using the module [`package-table`](https://github.com/ipfs-shipyard/package-table) with `package-table --data=package-list.json`.
+
+Listing of the main packages used in the IPFS ecosystem. There are also three specifications worth linking here:
+
+| Name | CI/Travis | Coverage | Description |
+| ---------|---------|---------|--------- |
+| **Files** |
+| [`go-unixfs`](//github.com/ipfs/go-unixfs) | [![Travis CI](https://travis-ci.com/ipfs/go-unixfs.svg?branch=master)](https://travis-ci.com/ipfs/go-unixfs) | [![codecov](https://codecov.io/gh/ipfs/go-unixfs/branch/master/graph/badge.svg)](https://codecov.io/gh/ipfs/go-unixfs) | the core 'filesystem' logic |
+| [`go-mfs`](//github.com/ipfs/go-mfs) | [![Travis CI](https://travis-ci.com/ipfs/go-mfs.svg?branch=master)](https://travis-ci.com/ipfs/go-mfs) | [![codecov](https://codecov.io/gh/ipfs/go-mfs/branch/master/graph/badge.svg)](https://codecov.io/gh/ipfs/go-mfs) | a mutable filesystem editor for unixfs |
+| [`go-ipfs-posinfo`](//github.com/ipfs/go-ipfs-posinfo) | [![Travis CI](https://travis-ci.com/ipfs/go-ipfs-posinfo.svg?branch=master)](https://travis-ci.com/ipfs/go-ipfs-posinfo) | [![codecov](https://codecov.io/gh/ipfs/go-ipfs-posinfo/branch/master/graph/badge.svg)](https://codecov.io/gh/ipfs/go-ipfs-posinfo) | helper datatypes for the filestore |
+| [`go-ipfs-chunker`](//github.com/ipfs/go-ipfs-chunker) | [![Travis CI](https://travis-ci.com/ipfs/go-ipfs-chunker.svg?branch=master)](https://travis-ci.com/ipfs/go-ipfs-chunker) | [![codecov](https://codecov.io/gh/ipfs/go-ipfs-chunker/branch/master/graph/badge.svg)](https://codecov.io/gh/ipfs/go-ipfs-chunker) | file chunkers |
+| **Exchange** |
+| [`go-ipfs-exchange-interface`](//github.com/ipfs/go-ipfs-exchange-interface) | [![Travis CI](https://travis-ci.com/ipfs/go-ipfs-exchange-interface.svg?branch=master)](https://travis-ci.com/ipfs/go-ipfs-exchange-interface) | [![codecov](https://codecov.io/gh/ipfs/go-ipfs-exchange-interface/branch/master/graph/badge.svg)](https://codecov.io/gh/ipfs/go-ipfs-exchange-interface) | exchange service interface |
+| [`go-ipfs-exchange-offline`](//github.com/ipfs/go-ipfs-exchange-offline) | [![Travis CI](https://travis-ci.com/ipfs/go-ipfs-exchange-offline.svg?branch=master)](https://travis-ci.com/ipfs/go-ipfs-exchange-offline) | [![codecov](https://codecov.io/gh/ipfs/go-ipfs-exchange-offline/branch/master/graph/badge.svg)](https://codecov.io/gh/ipfs/go-ipfs-exchange-offline) | (dummy) offline implementation of the exchange service |
+| [`go-bitswap`](//github.com/ipfs/go-bitswap) | [![Travis CI](https://travis-ci.com/ipfs/go-bitswap.svg?branch=master)](https://travis-ci.com/ipfs/go-bitswap) | [![codecov](https://codecov.io/gh/ipfs/go-bitswap/branch/master/graph/badge.svg)](https://codecov.io/gh/ipfs/go-bitswap) | bitswap protocol implementation |
+| [`go-blockservice`](//github.com/ipfs/go-blockservice) | [![Travis CI](https://travis-ci.com/ipfs/go-blockservice.svg?branch=master)](https://travis-ci.com/ipfs/go-blockservice) | [![codecov](https://codecov.io/gh/ipfs/go-blockservice/branch/master/graph/badge.svg)](https://codecov.io/gh/ipfs/go-blockservice) | service that plugs a blockstore and an exchange together |
+| **Datastores** |
+| [`go-datastore`](//github.com/ipfs/go-datastore) | [![Travis CI](https://travis-ci.com/ipfs/go-datastore.svg?branch=master)](https://travis-ci.com/ipfs/go-datastore) | [![codecov](https://codecov.io/gh/ipfs/go-datastore/branch/master/graph/badge.svg)](https://codecov.io/gh/ipfs/go-datastore) | datastore interfaces, adapters, and basic implementations |
+| [`go-ipfs-ds-help`](//github.com/ipfs/go-ipfs-ds-help) | [![Travis CI](https://travis-ci.com/ipfs/go-ipfs-ds-help.svg?branch=master)](https://travis-ci.com/ipfs/go-ipfs-ds-help) | [![codecov](https://codecov.io/gh/ipfs/go-ipfs-ds-help/branch/master/graph/badge.svg)](https://codecov.io/gh/ipfs/go-ipfs-ds-help) | datastore utility functions |
+| [`go-ds-flatfs`](//github.com/ipfs/go-ds-flatfs) | [![Travis CI](https://travis-ci.com/ipfs/go-ds-flatfs.svg?branch=master)](https://travis-ci.com/ipfs/go-ds-flatfs) | [![codecov](https://codecov.io/gh/ipfs/go-ds-flatfs/branch/master/graph/badge.svg)](https://codecov.io/gh/ipfs/go-ds-flatfs) | a filesystem-based datastore |
+| [`go-ds-measure`](//github.com/ipfs/go-ds-measure) | [![Travis CI](https://travis-ci.com/ipfs/go-ds-measure.svg?branch=master)](https://travis-ci.com/ipfs/go-ds-measure) | [![codecov](https://codecov.io/gh/ipfs/go-ds-measure/branch/master/graph/badge.svg)](https://codecov.io/gh/ipfs/go-ds-measure) | a metric-collecting database adapter |
+| [`go-ds-leveldb`](//github.com/ipfs/go-ds-leveldb) | [![Travis CI](https://travis-ci.com/ipfs/go-ds-leveldb.svg?branch=master)](https://travis-ci.com/ipfs/go-ds-leveldb) | [![codecov](https://codecov.io/gh/ipfs/go-ds-leveldb/branch/master/graph/badge.svg)](https://codecov.io/gh/ipfs/go-ds-leveldb) | a leveldb based datastore |
+| [`go-ds-badger`](//github.com/ipfs/go-ds-badger) | [![Travis CI](https://travis-ci.com/ipfs/go-ds-badger.svg?branch=master)](https://travis-ci.com/ipfs/go-ds-badger) | [![codecov](https://codecov.io/gh/ipfs/go-ds-badger/branch/master/graph/badge.svg)](https://codecov.io/gh/ipfs/go-ds-badger) | a badgerdb based datastore |
+| **Namesys** |
+| [`go-ipns`](//github.com/ipfs/go-ipns) | [![Travis CI](https://travis-ci.com/ipfs/go-ipns.svg?branch=master)](https://travis-ci.com/ipfs/go-ipns) | [![codecov](https://codecov.io/gh/ipfs/go-ipns/branch/master/graph/badge.svg)](https://codecov.io/gh/ipfs/go-ipns) | IPNS datastructures and validation logic |
+| **Repo** |
+| [`go-ipfs-config`](//github.com/ipfs/go-ipfs-config) | [![Travis CI](https://travis-ci.com/ipfs/go-ipfs-config.svg?branch=master)](https://travis-ci.com/ipfs/go-ipfs-config) | [![codecov](https://codecov.io/gh/ipfs/go-ipfs-config/branch/master/graph/badge.svg)](https://codecov.io/gh/ipfs/go-ipfs-config) | go-ipfs config file definitions |
+| [`go-fs-lock`](//github.com/ipfs/go-fs-lock) | [![Travis CI](https://travis-ci.com/ipfs/go-fs-lock.svg?branch=master)](https://travis-ci.com/ipfs/go-fs-lock) | [![codecov](https://codecov.io/gh/ipfs/go-fs-lock/branch/master/graph/badge.svg)](https://codecov.io/gh/ipfs/go-fs-lock) | lockfile management functions |
+| [`fs-repo-migrations`](//github.com/ipfs/fs-repo-migrations) | [![Travis CI](https://travis-ci.com/ipfs/fs-repo-migrations.svg?branch=master)](https://travis-ci.com/ipfs/fs-repo-migrations) | [![codecov](https://codecov.io/gh/ipfs/fs-repo-migrations/branch/master/graph/badge.svg)](https://codecov.io/gh/ipfs/fs-repo-migrations) | repo migrations |
+| **Blocks** |
+| [`go-block-format`](//github.com/ipfs/go-block-format) | [![Travis CI](https://travis-ci.com/ipfs/go-block-format.svg?branch=master)](https://travis-ci.com/ipfs/go-block-format) | [![codecov](https://codecov.io/gh/ipfs/go-block-format/branch/master/graph/badge.svg)](https://codecov.io/gh/ipfs/go-block-format) | block interfaces and implementations |
+| [`go-ipfs-blockstore`](//github.com/ipfs/go-ipfs-blockstore) | [![Travis CI](https://travis-ci.com/ipfs/go-ipfs-blockstore.svg?branch=master)](https://travis-ci.com/ipfs/go-ipfs-blockstore) | [![codecov](https://codecov.io/gh/ipfs/go-ipfs-blockstore/branch/master/graph/badge.svg)](https://codecov.io/gh/ipfs/go-ipfs-blockstore) | blockstore interfaces and implementations |
+| **Commands** |
+| [`go-ipfs-cmds`](//github.com/ipfs/go-ipfs-cmds) | [![Travis CI](https://travis-ci.com/ipfs/go-ipfs-cmds.svg?branch=master)](https://travis-ci.com/ipfs/go-ipfs-cmds) | [![codecov](https://codecov.io/gh/ipfs/go-ipfs-cmds/branch/master/graph/badge.svg)](https://codecov.io/gh/ipfs/go-ipfs-cmds) | CLI & HTTP commands library |
+| [`go-ipfs-api`](//github.com/ipfs/go-ipfs-api) | [![Travis CI](https://travis-ci.com/ipfs/go-ipfs-api.svg?branch=master)](https://travis-ci.com/ipfs/go-ipfs-api) | [![codecov](https://codecov.io/gh/ipfs/go-ipfs-api/branch/master/graph/badge.svg)](https://codecov.io/gh/ipfs/go-ipfs-api) | a shell for the IPFS HTTP API |
+| **Metrics & Logging** |
+| [`go-metrics-interface`](//github.com/ipfs/go-metrics-interface) | [![Travis CI](https://travis-ci.com/ipfs/go-metrics-interface.svg?branch=master)](https://travis-ci.com/ipfs/go-metrics-interface) | [![codecov](https://codecov.io/gh/ipfs/go-metrics-interface/branch/master/graph/badge.svg)](https://codecov.io/gh/ipfs/go-metrics-interface) | metrics collection interfaces |
+| [`go-metrics-prometheus`](//github.com/ipfs/go-metrics-prometheus) | [![Travis CI](https://travis-ci.com/ipfs/go-metrics-prometheus.svg?branch=master)](https://travis-ci.com/ipfs/go-metrics-prometheus) | [![codecov](https://codecov.io/gh/ipfs/go-metrics-prometheus/branch/master/graph/badge.svg)](https://codecov.io/gh/ipfs/go-metrics-prometheus) | prometheus-backed metrics collector |
+| [`go-log`](//github.com/ipfs/go-log) | [![Travis CI](https://travis-ci.com/ipfs/go-log.svg?branch=master)](https://travis-ci.com/ipfs/go-log) | [![codecov](https://codecov.io/gh/ipfs/go-log/branch/master/graph/badge.svg)](https://codecov.io/gh/ipfs/go-log) | logging framework |
+| **Generics/Utils** |
+| [`go-ipfs-routing`](//github.com/ipfs/go-ipfs-routing) | [![Travis CI](https://travis-ci.com/ipfs/go-ipfs-routing.svg?branch=master)](https://travis-ci.com/ipfs/go-ipfs-routing) | [![codecov](https://codecov.io/gh/ipfs/go-ipfs-routing/branch/master/graph/badge.svg)](https://codecov.io/gh/ipfs/go-ipfs-routing) | routing (content, peer, value) helpers |
+| [`go-ipfs-util`](//github.com/ipfs/go-ipfs-util) | [![Travis CI](https://travis-ci.com/ipfs/go-ipfs-util.svg?branch=master)](https://travis-ci.com/ipfs/go-ipfs-util) | [![codecov](https://codecov.io/gh/ipfs/go-ipfs-util/branch/master/graph/badge.svg)](https://codecov.io/gh/ipfs/go-ipfs-util) | the kitchen sink |
+| [`go-ipfs-addr`](//github.com/ipfs/go-ipfs-addr) | [![Travis CI](https://travis-ci.com/ipfs/go-ipfs-addr.svg?branch=master)](https://travis-ci.com/ipfs/go-ipfs-addr) | [![codecov](https://codecov.io/gh/ipfs/go-ipfs-addr/branch/master/graph/badge.svg)](https://codecov.io/gh/ipfs/go-ipfs-addr) | utility functions for parsing IPFS multiaddrs |
+
+For brevity, we've omitted go-libp2p and go-ipld packages. These package tables can be found in their respective project's READMEs:
+
+* [go-libp2p](https://github.com/libp2p/go-libp2p#packages)
+* [go-ipld](https://github.com/ipld/go-ipld#packages)
 
 ## Development
 
@@ -334,7 +416,8 @@ Some places to get you started on the codebase:
 - libp2p
   - libp2p: https://github.com/libp2p/go-libp2p
   - DHT: https://github.com/libp2p/go-libp2p-kad-dht
-  - PubSub: https://github.com/libp2p/go-floodsub
+  - PubSub: https://github.com/libp2p/go-libp2p-pubsub
+- [IPFS : The `Add` command demystified](https://github.com/ipfs/go-ipfs/tree/master/docs/add-code-flow.md)
 
 ### CLI, HTTP-API, Architecture Diagram
 
@@ -360,11 +443,14 @@ Find more documentation for developers on [docs](./docs)
 
 ## Contributing
 
-[![](https://cdn.rawgit.com/jbenet/contribute-ipfs-gif/master/img/contribute.gif)](https://github.com/ipfs/community/blob/master/contributing.md)
+[![](https://cdn.rawgit.com/jbenet/contribute-ipfs-gif/master/img/contribute.gif)](https://github.com/ipfs/community/blob/master/CONTRIBUTING.md)
 
-We ❤️ all [our contributors](docs/AUTHORS); this project wouldn’t be what it is without you! If you want to help out, please see [Contribute.md](contribute.md).
+We ❤️ all [our contributors](docs/AUTHORS); this project wouldn’t be what it is without you! If you want to help out, please see [CONTRIBUTING.md](CONTRIBUTING.md).
 
 This repository falls under the IPFS [Code of Conduct](https://github.com/ipfs/community/blob/master/code-of-conduct.md).
+
+You can contact us on the freenode #ipfs-dev channel or attend one of our
+[weekly calls](https://github.com/ipfs/team-mgmt/issues/674).
 
 ## License
 

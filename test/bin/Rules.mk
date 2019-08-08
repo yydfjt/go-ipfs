@@ -2,48 +2,61 @@ include mk/header.mk
 
 TGTS_$(d) :=
 
-$(d)/random: Godeps/_workspace/src/github.com/jbenet/go-random/random
-	$(go-build)
-TGTS_$(d) += $(d)/random
-
-$(d)/random-files: Godeps/_workspace/src/github.com/jbenet/go-random-files/random-files
-	$(go-build)
-TGTS_$(d) += $(d)/random-files
-
 $(d)/pollEndpoint: thirdparty/pollEndpoint
-	$(go-build)
+	$(go-build-relative)
 TGTS_$(d) += $(d)/pollEndpoint
 
 $(d)/go-sleep: test/dependencies/go-sleep
-	$(go-build)
+	$(go-build-relative)
 TGTS_$(d) += $(d)/go-sleep
 
 $(d)/go-timeout: test/dependencies/go-timeout
-	$(go-build)
+	$(go-build-relative)
 TGTS_$(d) += $(d)/go-timeout
 
+$(d)/iptb: test/dependencies/iptb
+	$(go-build-relative)
+TGTS_$(d) += $(d)/iptb
+
 $(d)/ma-pipe-unidir: test/dependencies/ma-pipe-unidir
-	$(go-build)
+	$(go-build-relative)
 TGTS_$(d) += $(d)/ma-pipe-unidir
 
-TGTS_GX_$(d) := hang-fds iptb
-TGTS_GX_$(d) := $(addprefix $(d)/,$(TGTS_GX_$(d)))
+$(d)/json-to-junit: test/dependencies/json-to-junit
+	$(go-build-relative)
+TGTS_$(d) += $(d)/json-to-junit
 
-$(TGTS_GX_$(d)):
-	go build -i $(go-flags-with-tags) -o "$@" "$(call gx-path,$(notdir $@))"
+$(d)/gotestsum:
+	$(call go-build,gotest.tools/gotestsum)
+TGTS_$(d) += $(d)/gotestsum
 
-TGTS_$(d) += $(TGTS_GX_$(d))
+$(d)/hang-fds:
+	$(call go-build,github.com/ipfs/hang-fds)
+TGTS_$(d) += $(d)/hang-fds
 
-# multihash is special
 $(d)/multihash:
-	go build -i $(go-flags-with-tags) -o "$@" "gx/ipfs/$(shell gx deps find go-multihash)/go-multihash/multihash"
+	$(call go-build,github.com/multiformats/go-multihash/multihash)
 TGTS_$(d) += $(d)/multihash
 
-# cid-fmt is also special
 $(d)/cid-fmt:
-	go build -i $(go-flags-with-tags) -o "$@" "gx/ipfs/$(shell gx deps find go-cidutil)/go-cidutil/cid-fmt"
+	$(call go-build,github.com/ipfs/go-cidutil/cid-fmt)
 TGTS_$(d) += $(d)/cid-fmt
 
+$(d)/random:
+	$(call go-build,github.com/jbenet/go-random/random)
+TGTS_$(d) += $(d)/random
+
+$(d)/random-files:
+	$(call go-build,github.com/jbenet/go-random-files/random-files)
+TGTS_$(d) += $(d)/random-files
+
+$(d)/gocovmerge:
+	$(call go-build,github.com/Kubuxu/gocovmerge)
+TGTS_$(d) += $(d)/gocovmerge
+
+$(d)/golangci-lint:
+	$(call go-build,github.com/golangci/golangci-lint/cmd/golangci-lint)
+TGTS_$(d) += $(d)/golangci-lint
 
 $(TGTS_$(d)): $$(DEPS_GO)
 
